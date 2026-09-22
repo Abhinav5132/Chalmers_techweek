@@ -1,0 +1,1 @@
+run git clone https://github.com/unitreerobotics/unitree_mujoco.git in the project root to download the unitree g1 model. 
