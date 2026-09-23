@@ -70,14 +70,14 @@ class PinkG1Controller:
         self._init_nominal_posture()
         self.rest_pelvis_z: float = self._compute_rest_pelvis_z()
 
-        # QP solver selection - hard crash if neither proxqp nor quadprog is available
-        if "proxqp" in qpsolvers.available_solvers:
-            self.solver: str = "proxqp"
-        elif "quadprog" in qpsolvers.available_solvers:
+        # QP solver selection - prefer quadprog for active-set robustness, fallback to proxqp
+        if "quadprog" in qpsolvers.available_solvers:
             self.solver: str = "quadprog"
+        elif "proxqp" in qpsolvers.available_solvers:
+            self.solver: str = "proxqp"
         else:
             raise RuntimeError(
-                "No compatible QP solver found for Pink (proxqp or quadprog required). "
+                "No compatible QP solver found for Pink (quadprog or proxqp required). "
                 f"Available solvers: {qpsolvers.available_solvers}"
             )
 
@@ -185,37 +185,50 @@ class PinkG1Controller:
         self.pin_data = self.pin_model.createData()
 
         # Initial configuration matching current simulation state
-        # In MuJoCo qpos has 7 floating base coords + 29 joint angles.
-        # If the URDF has only the 29 actuated joints (nq == 29), map from qpos[7:36].
         start_idx = 7 if (self.pin_model.nq == self.n_ctrl and len(self.mj_data.qpos) > self.n_ctrl) else 0
         q_init = np.asarray(self.mj_data.qpos[start_idx : start_idx + self.pin_model.nq], dtype=np.float64).copy()
         self.pink_config = pink.Configuration(self.pin_model, self.pin_data, q_init)
 
-        # Set up default posture task
-        self.posture_task = PostureTask(cost=1e-3)
-        self.posture_task.set_target(q_init)
+        # Set up posture task to maintain nominal standing configuration
+        self.posture_task = PostureTask(cost=1e-1)
+        self.posture_task.set_target(self.q_nominal_29)
+
+    def world_to_pelvis(self, pos_world: np.ndarray) -> np.ndarray:
+        """Transforms a 3D coordinate from MuJoCo world frame into Pinocchio root (pelvis) frame."""
+        p_pelvis = np.asarray(self.mj_data.qpos[0:3], dtype=np.float64)
+        w, x, y, z = self.mj_data.qpos[3:7]
+        r_pelvis = np.array([
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ], dtype=np.float64)
+        return r_pelvis.T @ (np.asarray(pos_world, dtype=np.float64).reshape(3) - p_pelvis)
 
     def solve_reach(
         self,
         target_pos: np.ndarray,
         target_rpy: np.ndarray | None = None,
         body_name: str = "right_wrist_yaw_link",
-        dt: float = 0.01
+        dt: float = 0.01,
+        in_world_frame: bool = True
     ) -> np.ndarray:
         """
         Solve Inverse Kinematics using Pink QP to move specified body to target_pos (Cartesian XYZ).
+        If in_world_frame is True, target_pos is interpreted in MuJoCo world coordinates.
         Returns target joint position vector (29-DoF). Hard crashes if IK solve fails.
         """
-        pos = np.asarray(target_pos, dtype=np.float64).reshape(3)
+        pos = self.world_to_pelvis(target_pos) if in_world_frame else np.asarray(target_pos, dtype=np.float64).reshape(3)
         rpy = np.asarray(target_rpy, dtype=np.float64).reshape(3) if target_rpy is not None else None
 
-        # Sync Pink configuration with current MuJoCo state
+        # Sync Pink configuration with current MuJoCo state, safely clipped inside URDF limits
         start_idx = 7 if (self.pin_model.nq == self.n_ctrl and len(self.mj_data.qpos) > self.n_ctrl) else 0
-        q_current = np.asarray(self.mj_data.qpos[start_idx : start_idx + self.pin_model.nq], dtype=np.float64).copy()
-        self.pink_config.q = q_current
+        q_raw = np.asarray(self.mj_data.qpos[start_idx : start_idx + self.pin_model.nq], dtype=np.float64)
+        eps = 1e-4
+        q_safe = np.clip(q_raw, self.pin_model.lowerPositionLimit + eps, self.pin_model.upperPositionLimit - eps)
+        self.pink_config.q = q_safe
         self.pink_config.update()
 
-        # Build target transform
+        # Build target transform in Pinocchio root frame
         if rpy is not None:
             rot_matrix = pin.utils.rpyToMatrix(float(rpy[0]), float(rpy[1]), float(rpy[2]))
         else:
@@ -225,8 +238,9 @@ class PinkG1Controller:
 
         frame_task = FrameTask(
             body_name,
-            position_cost=1.0,
+            position_cost=5.0,
             orientation_cost=0.1 if rpy is not None else 0.0,
+            gain=5.0,
         )
         frame_task.set_target(target_transform)
 

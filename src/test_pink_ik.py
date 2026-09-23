@@ -30,7 +30,19 @@ from src.controllers.pink_controller import PinkG1Controller
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Unitree G1 Standing Controller Test")
+    parser = argparse.ArgumentParser(description="Unitree G1 Kinematics & Reaching Controller Test")
+    parser.add_argument(
+        "--stand",
+        action="store_true",
+        help="Only hold standing stance without arm reaching.",
+    )
+    parser.add_argument(
+        "--target",
+        nargs=3,
+        type=float,
+        default=[0.25, -0.20, 0.75],
+        help="Target 3D position [X Y Z] in world coordinates for right wrist (default: 0.25 -0.20 0.75).",
+    )
     parser.add_argument(
         "--anchor",
         action="store_true",
@@ -61,9 +73,14 @@ def main() -> None:
         print(f"Error: Scene file not found at {scene_path}. Ensure unitree_mujoco is set up.")
         sys.exit(1)
 
+    target_pos: np.ndarray = np.array(args.target, dtype=np.float64)
+
     print("==================================================")
-    print("Unitree G1 Standing Controller (SKF Hackathon)")
-    print("Mode: STABLE STAND ONLY (holding calibrated stance)")
+    print("Unitree G1 Kinematics & Reaching Controller")
+    if args.stand:
+        print("Mode: STABLE STAND ONLY")
+    else:
+        print(f"Mode: PINK QP ARM REACH -> Target: {target_pos}")
     print(f"Pelvis Anchor (Test Gantry Harness): {args.anchor}")
     print("==================================================")
 
@@ -90,6 +107,9 @@ def main() -> None:
     # Step once to establish contacts
     mj.mj_step(mj_model, mj_data)
 
+    hand_name: str = "right_wrist_yaw_link"
+    hand_id: int = int(mj.mj_name2id(mj_model, mj.mjtObj.mjOBJ_BODY, hand_name))
+
     # Check if a display is available for interactive viewer
     has_display: bool = (
         not args.headless
@@ -112,9 +132,12 @@ def main() -> None:
                     mj_data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
                     mj_data.qvel[0:6] = 0.0
 
-                # Hold calibrated standing posture
-                torques: np.ndarray = controller.compute_pd_torques(controller.q_nominal_29)
-                mj_data.ctrl[:] = torques
+                if args.stand:
+                    torques: np.ndarray = controller.compute_pd_torques(controller.q_nominal_29)
+                    mj_data.ctrl[:] = torques
+                else:
+                    # Reach directly toward target 3D point using Pink QP
+                    controller.step_reach(target_pos, body_name=hand_name, dt=dt)
 
                 # Step physics
                 mj.mj_step(mj_model, mj_data)
@@ -127,20 +150,26 @@ def main() -> None:
                 if dt > elapsed:
                     time.sleep(dt - elapsed)
     else:
-        print("\nNo display detected. Running 500 steps in headless mode...")
+        print("\nRunning 500 steps in headless mode...")
+        dt_val: float = float(mj_model.opt.timestep)
         for step in range(500):
             if args.anchor:
                 mj_data.qpos[0:3] = [0.0, 0.0, pelvis_z]
                 mj_data.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
                 mj_data.qvel[0:6] = 0.0
 
-            torques_val: np.ndarray = controller.compute_pd_torques(controller.q_nominal_29)
-            mj_data.ctrl[:] = torques_val
+            if args.stand:
+                torques_val: np.ndarray = controller.compute_pd_torques(controller.q_nominal_29)
+                mj_data.ctrl[:] = torques_val
+            else:
+                controller.step_reach(target_pos, body_name=hand_name, dt=dt_val)
 
             mj.mj_step(mj_model, mj_data)
 
-            if step % 100 == 0:
-                print(f"Step {step:04d} | Pelvis Z: {mj_data.qpos[2]:.3f}m | Stance: Active")
+            if step % 100 == 0 or step == 499:
+                current_hand = np.asarray(mj_data.xpos[hand_id], dtype=np.float64)
+                err_cm = float(np.linalg.norm(target_pos - current_hand) * 100.0)
+                print(f"Step {step:04d} | Hand: {current_hand.round(3)} | Target: {target_pos.round(3)} | Error: {err_cm:.2f} cm")
 
         print("Headless simulation completed successfully.")
 

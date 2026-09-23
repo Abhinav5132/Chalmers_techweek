@@ -35,7 +35,7 @@ setup-urdf:
     @curl -sSL https://raw.githubusercontent.com/unitreerobotics/unitree_ros/master/robots/g1_description/g1_29dof.urdf -o unitree_mujoco/unitree_robots/g1/g1_29dof.urdf
     @echo "URDF saved to unitree_mujoco/unitree_robots/g1/g1_29dof.urdf"
 
-# Run the Unitree G1 standing controller test (with pelvis anchor)
+# Run the Pink QP arm reaching test (right arm reaches to table target)
 test:
     @if command -v uv >/dev/null 2>&1; then \
         uv run python src/test_pink_ik.py; \
@@ -43,7 +43,13 @@ test:
         python src/test_pink_ik.py; \
     fi
 
-stand: test
+# Hold calibrated standing stance only (no arm movement)
+stand:
+    @if command -v uv >/dev/null 2>&1; then \
+        uv run python src/test_pink_ik.py --stand; \
+    else \
+        python src/test_pink_ik.py --stand; \
+    fi
 
 # Run test with unanchored floating-base (requires active balance)
 test-free:
