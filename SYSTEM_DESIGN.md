@@ -209,7 +209,7 @@ graph TD
 
 ### Phase 1: Core Kinematics & Motion Clip Integration
 - [x] MuJoCo G1 model loaded in viewer (`g1_29dof.xml`).
-- [ ] Install `pink` and `pinocchio`.
+- [x] Install `pink` and `pinocchio`.
 - [ ] Implement standalone Pink arm reaching & Whole-Body CoM standing in MuJoCo.
 - [ ] Download and inspect sample G1 motion clips (`.npz`) from `g1-moves`.
 
