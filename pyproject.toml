@@ -9,6 +9,16 @@ dependencies = [
     "numpy>=2.4.6",
     "pin>=3.0.0",
     "pin-pink>=4.4.0",
-    "pygame>=2.6.1",
     "dearpygui>=1.11.0",
+    "ty>=0.0.83",
+    "qpsolvers>=4.0.0",
+    "proxsuite>=0.6.0",
+    "quadprog>=0.1.12",
 ]
+
+[tool.ty.analysis]
+allowed-unresolved-imports = ["mujoco.*", "pinocchio.*", "pink.*"]
+
+[tool.ty.rules]
+unresolved-attribute = "ignore"
+

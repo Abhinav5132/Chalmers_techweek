@@ -2,72 +2,85 @@
 
 Visual, modular, and natural-language-driven control for the **Unitree G1 29-DoF Humanoid Robot** in MuJoCo.
 
-See the full architectural specification in [SYSTEM_DESIGN.md](file:///mnt/idfk/programming_stuff/SKF_Hackathon/SYSTEM_DESIGN.md).
+See the full architectural specification in [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
 
 ---
 
-## 1. Setup & Robot Model
+## 1. Quickstart & Command Reference
 
-### Download Only the G1 Model (Sparse Clone)
-To download only the G1 robot assets without cloning the full repository (omitting other robots and C++ build files):
-
-```bash
-just setup-model
-```
-
-Or run manually:
-```bash
-git clone --depth 1 --filter=blob:none --sparse https://github.com/unitreerobotics/unitree_mujoco.git
-cd unitree_mujoco
-git sparse-checkout set unitree_robots/g1
-rm -rf .git
-```
-
-### Tracking the Model in Git
-When a folder is cloned via `git clone` inside an existing Git repo, Git registers it as a nested repository (submodule), preventing files inside from being tracked.
-
-To track the G1 model files in your repository:
-```bash
-# 1. Remove any nested git directory inside unitree_mujoco
-rm -rf unitree_mujoco/.git
-
-# 2. Clear Git's submodule cache if it was staged as a gitlink
-git rm --cached unitree_mujoco 2>/dev/null || true
-
-# 3. Add the files to your repository
-git add unitree_mujoco/
-git commit -m "Add Unitree G1 robot model and meshes"
-```
-
----
-
-## 2. Running Simulations (`justfile`)
-
-This project uses [`just`](https://github.com/casey/just) to automate common tasks.
-
-### Command Reference
+This project uses [`just`](https://github.com/casey/just) and [`uv`](https://github.com/astral-sh/uv) to manage and run tasks.
 
 | Command | Description |
 | :--- | :--- |
-| `just sim` | Launch the default **G1 29-DoF** simulation scene in MuJoCo viewer. |
-| `just sim <path/to/scene.xml>` | Launch a custom simulation scene. |
+| `just stand` / `just test` | Run the G1 standing controller test (holding calibrated stance with pelvis gantry anchor). |
+| `just test-free` | Run standing test with unanchored floating base (requires active balance policy). |
+| `just sim` | Launch the default **G1 29-DoF** simulation scene in the MuJoCo viewer. |
 | `just sim-23dof` | Launch the **G1 23-DoF** variant scene. |
-| `just setup-model` | Sparsely clone only the G1 model from `unitree_mujoco`. |
-| `just hello` | Run the smoke test (`src/hello.py`). |
+| `just sim <scene.xml>` | Launch a custom MuJoCo simulation scene. |
+| `just check` | Run static type checking with Astral **ty** (`uv run ty check`). |
+| `just setup-urdf` | Download the official G1 29-DoF URDF from Unitree description repo. |
 
-### Examples
+### Running the Standing Controller
 
-**Default G1 29-DoF Scene**:
+**Interactive Viewer (Anchored Test Gantry)**:
 ```bash
-just sim
+just stand
 ```
 
-**Custom Scene**:
+**Headless / CI Mode**:
 ```bash
-just sim unitree_mujoco/unitree_robots/g1/scene.xml
+uv run python src/test_pink_ik.py --headless
 ```
 
-**Direct Execution with `uv`** (without `just`):
+**Direct Execution via `uv`**:
 ```bash
-uv run python -m mujoco.viewer --mjcf=unitree_mujoco/unitree_robots/g1/scene_29dof.xml
+# Hold standing posture with pelvis anchor (default)
+uv run python src/test_pink_ik.py
+
+# Unanchored floating base
+uv run python src/test_pink_ik.py --no-anchor
 ```
+
+---
+
+## 2. Kinematics & Standing Controller
+
+### Pink QP Inverse Kinematics
+* Powered by [Pink](https://github.com/stephane-caron/pink) and [Pinocchio](https://github.com/stack-of-tasks/pinocchio) for whole-body and Cartesian IK tasks.
+* **Strict Dependency**: Pinocchio, Pink, and a compatible QP solver (`proxqp` or `quadprog`) are **mandatory**. If any are missing or if IK fails, the controller immediately raises an unhandled exception and hard-crashes.
+
+### Calibrated Zero-Penetration Standing
+* **Pelvis Resting Height**: Dynamically computed via `controller.rest_pelvis_z = 0.7842m` using forward kinematics. This places the foot contact spheres precisely on the ground plane at $z = 0.000\text{m}$ with zero collision penetration.
+* **Stable Contact**: Resolves the classic simulation issue where anchoring too low causes MuJoCo's contact solver to generate large repulsive normal forces that kick the feet backward.
+* **Nominal Stance Angles**:
+  * Hip pitch: `-0.1 rad`
+  * Knee: `+0.3 rad`
+  * Ankle pitch: `-0.2 rad`
+
+### Pelvis Anchor vs. Free Floating Base
+* `--anchor` (default): Simulates an industrial testing gantry / harness, pinning the pelvis at $(0, 0, 0.7842\text{m})$. This isolates upper-body manipulation and kinematics from balance dynamics.
+* `--no-anchor`: Simulates a free floating base (6 unactuated degrees of freedom). Under pure joint PD control, the robot acts as an inverted pendulum and requires an active balance policy (such as RL via `wbc-mjlab`) to avoid tipping over.
+
+---
+
+## 3. Type Checking
+
+This codebase enforces strict static typing using Astral's [ty](https://github.com/astral-sh/ty):
+
+```bash
+just check
+```
+All code in `src/` must pass with **0 diagnostics**.
+
+---
+
+## 4. Troubleshooting & Linux Notes
+
+### Warning: `Failed to load plugin 'libdecor-gtk.so': failed to init`
+* **What it is**: `libdecor` is a client-side window decoration library used by GLFW/MuJoCo on Wayland desktops (Ubuntu, Fedora, Arch) to render window borders and title bars.
+* **Do you need to install it?**: **No.** It is purely cosmetic. MuJoCo automatically falls back to internal decorations, and physics/rendering are completely unaffected.
+* **How to silence the warning (optional)**:
+  ```bash
+  sudo apt install libdecor-0-plugin-1-cairo
+  ```
+

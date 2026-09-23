@@ -18,14 +18,6 @@ sim scene=default_scene:
 sim-23dof:
     @just sim unitree_mujoco/unitree_robots/g1/scene_23dof.xml
 
-# Run the project hello test
-hello:
-    @if command -v uv >/dev/null 2>&1; then \
-        uv run python src/hello.py; \
-    else \
-        python src/hello.py; \
-    fi
-
 # Clone only the Unitree G1 robot model using git sparse-checkout
 setup-model:
     @if [ -d "unitree_mujoco/unitree_robots/g1" ]; then \
@@ -36,4 +28,43 @@ setup-model:
         cd unitree_mujoco && git sparse-checkout set unitree_robots/g1 && rm -rf .git; \
         echo "G1 model setup complete!"; \
     fi
+
+# Download the official Unitree G1 29-DoF URDF for Pinocchio/Pink
+setup-urdf:
+    @echo "Downloading official G1 29-DoF URDF from Unitree..."
+    @curl -sSL https://raw.githubusercontent.com/unitreerobotics/unitree_ros/master/robots/g1_description/g1_29dof.urdf -o unitree_mujoco/unitree_robots/g1/g1_29dof.urdf
+    @echo "URDF saved to unitree_mujoco/unitree_robots/g1/g1_29dof.urdf"
+
+# Run the Unitree G1 standing controller test (with pelvis anchor)
+test:
+    @if command -v uv >/dev/null 2>&1; then \
+        uv run python src/test_pink_ik.py; \
+    else \
+        python src/test_pink_ik.py; \
+    fi
+
+stand: test
+
+# Run test with unanchored floating-base (requires active balance)
+test-free:
+    @if command -v uv >/dev/null 2>&1; then \
+        uv run python src/test_pink_ik.py --no-anchor; \
+    else \
+        python src/test_pink_ik.py --no-anchor; \
+    fi
+
+
+# Run static type checking with ty
+check:
+    @if command -v uv >/dev/null 2>&1; then \
+        uv run ty check; \
+    elif command -v ty >/dev/null 2>&1; then \
+        ty check; \
+    else \
+        echo "ty is not installed. Run: uv run ty check"; \
+    fi
+
+
+
+
 
