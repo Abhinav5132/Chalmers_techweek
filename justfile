@@ -20,16 +20,19 @@ sim-23dof:
 
 # Initialize entire environment (models, URDF, motion clips, dependencies, and verification)
 init:
+    @if ! command -v uv >/dev/null 2>&1; then \
+        echo "Error: 'uv' is required for environment setup but was not found in PATH." >&2; \
+        echo "Please install uv: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; \
+        exit 1; \
+    fi
     @echo "=== Initializing SKF Hackathon Environment ==="
+    @echo "Syncing dependencies with uv..."
+    @uv sync
     @just setup-model
     @just setup-urdf
     @just setup-motions
-    @if command -v uv >/dev/null 2>&1; then \
-        echo "Syncing dependencies with uv..."; \
-        uv sync; \
-        echo "Running static type check verification..."; \
-        uv run ty check; \
-    fi
+    @echo "Running static type check verification..."
+    @uv run ty check
     @echo "=== Environment Initialization Complete! ==="
 
 # Clone only the Unitree G1 robot model using git sparse-checkout
@@ -49,26 +52,55 @@ setup-urdf:
         echo "G1 URDF already exists at unitree_mujoco/unitree_robots/g1/g1_29dof.urdf"; \
     else \
         echo "Downloading official G1 29-DoF URDF from Unitree..."; \
-        curl -sSL https://raw.githubusercontent.com/unitreerobotics/unitree_ros/master/robots/g1_description/g1_29dof.urdf -o unitree_mujoco/unitree_robots/g1/g1_29dof.urdf; \
+        curl -f -sSL https://raw.githubusercontent.com/unitreerobotics/unitree_ros/master/robots/g1_description/g1_29dof.urdf -o unitree_mujoco/unitree_robots/g1/g1_29dof.urdf; \
         echo "URDF saved to unitree_mujoco/unitree_robots/g1/g1_29dof.urdf"; \
     fi
 
-# Download sample G1 motion clips (.npz) from Hugging Face g1-moves
+# Download sample G1 motion clips (.npz) from Hugging Face g1-moves with validation
 setup-motions:
-    @mkdir -p data/motions
-    @base_url="https://huggingface.co/datasets/exptech/g1-moves/resolve/main"; \
-    for item in "walk.npz:dance/J_ShortDance16_JazzWalk/training/J_ShortDance16_JazzWalk.npz" \
-                "step_touch.npz:dance/J_Dance0_StepTouch/training/J_Dance0_StepTouch.npz" \
-                "bow.npz:karate/B_BowKarate/training/B_BowKarate.npz"; do \
-        target="${item%%:*}"; \
-        src="${item#*:}"; \
-        if [ ! -f "data/motions/$target" ]; then \
-            echo "Downloading data/motions/$target from Hugging Face..."; \
-            curl -L -sSL "$base_url/$src?download=true" -o "data/motions/$target"; \
-            echo "Saved data/motions/$target"; \
-        else \
-            echo "data/motions/$target already exists."; \
-        fi \
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p data/motions
+    if command -v uv >/dev/null 2>&1; then
+        PY_CMD="uv run python"
+    else
+        PY_CMD="python3"
+    fi
+    base_url="https://huggingface.co/datasets/exptech/g1-moves/resolve/main"
+    val_script="import sys, numpy as np; d = np.load(sys.argv[1]); assert all(k in d for k in ['fps', 'joint_pos', 'body_pos_w', 'body_quat_w'])"
+    items=(
+        "walk.npz:dance/J_ShortDance16_JazzWalk/training/J_ShortDance16_JazzWalk.npz"
+        "step_touch.npz:dance/J_Dance0_StepTouch/training/J_Dance0_StepTouch.npz"
+        "bow.npz:karate/B_BowKarate/training/B_BowKarate.npz"
+    )
+    for item in "${items[@]}"; do
+        target="${item%%:*}"
+        src="${item#*:}"
+        dest="data/motions/$target"
+        tmp_file="data/motions/.${target}.tmp"
+        if [ -f "$dest" ]; then
+            if $PY_CMD -c "$val_script" "$dest" >/dev/null 2>&1; then
+                echo "$dest already exists and is valid."
+                continue
+            else
+                echo "Warning: $dest is corrupted or invalid. Removing and re-downloading..."
+                rm -f "$dest"
+            fi
+        fi
+        echo "Downloading $dest from Hugging Face..."
+        rm -f "$tmp_file"
+        if ! curl -f -L -sSL "$base_url/$src?download=true" -o "$tmp_file"; then
+            echo "Error: Failed to download $target (HTTP or network error)." >&2
+            rm -f "$tmp_file"
+            exit 1
+        fi
+        if ! $PY_CMD -c "$val_script" "$tmp_file" >/dev/null 2>&1; then
+            echo "Error: Downloaded file $target is invalid or corrupted (failed key validation)." >&2
+            rm -f "$tmp_file"
+            exit 1
+        fi
+        mv "$tmp_file" "$dest"
+        echo "Validated and saved $dest"
     done
 
 download-motions: setup-motions

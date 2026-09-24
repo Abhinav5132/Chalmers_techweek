@@ -172,6 +172,11 @@ class PinkG1Controller:
     def _init_pink(self, xml_path: str) -> None:
         """Build Pinocchio model from URDF or MuJoCo XML and initialize Pink tasks."""
         urdf_path = xml_path.replace(".xml", ".urdf")
+        if not os.path.exists(urdf_path):
+            alt_urdf = os.path.join(os.path.dirname(xml_path), "g1_29dof.urdf")
+            if os.path.exists(alt_urdf):
+                urdf_path = alt_urdf
+
         if os.path.exists(urdf_path):
             self.pin_model = pin.buildModelFromUrdf(urdf_path)
         elif hasattr(pin, "mjcf"):
@@ -193,16 +198,25 @@ class PinkG1Controller:
         self.posture_task = PostureTask(cost=1e-1)
         self.posture_task.set_target(self.q_nominal_29)
 
-    def world_to_pelvis(self, pos_world: np.ndarray) -> np.ndarray:
-        """Transforms a 3D coordinate from MuJoCo world frame into Pinocchio root (pelvis) frame."""
-        p_pelvis = np.asarray(self.mj_data.qpos[0:3], dtype=np.float64)
+    def get_pelvis_rot_matrix(self) -> np.ndarray:
+        """Returns the 3x3 rotation matrix of the pelvis floating base in world frame."""
         w, x, y, z = self.mj_data.qpos[3:7]
-        r_pelvis = np.array([
+        return np.array([
             [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
             [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
             [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
         ], dtype=np.float64)
+
+    def world_to_pelvis(self, pos_world: np.ndarray) -> np.ndarray:
+        """Transforms a 3D coordinate from MuJoCo world frame into Pinocchio root (pelvis) frame."""
+        p_pelvis = np.asarray(self.mj_data.qpos[0:3], dtype=np.float64)
+        r_pelvis = self.get_pelvis_rot_matrix()
         return r_pelvis.T @ (np.asarray(pos_world, dtype=np.float64).reshape(3) - p_pelvis)
+
+    def world_rot_to_pelvis(self, rot_world: np.ndarray) -> np.ndarray:
+        """Transforms a 3x3 rotation matrix from MuJoCo world frame into Pinocchio root (pelvis) frame."""
+        r_pelvis = self.get_pelvis_rot_matrix()
+        return r_pelvis.T @ np.asarray(rot_world, dtype=np.float64)
 
     def solve_reach(
         self,
@@ -214,7 +228,7 @@ class PinkG1Controller:
     ) -> np.ndarray:
         """
         Solve Inverse Kinematics using Pink QP to move specified body to target_pos (Cartesian XYZ).
-        If in_world_frame is True, target_pos is interpreted in MuJoCo world coordinates.
+        If in_world_frame is True, target_pos and target_rpy are interpreted in MuJoCo world coordinates.
         Returns target joint position vector (29-DoF). Hard crashes if IK solve fails.
         """
         pos = self.world_to_pelvis(target_pos) if in_world_frame else np.asarray(target_pos, dtype=np.float64).reshape(3)
@@ -228,9 +242,10 @@ class PinkG1Controller:
         self.pink_config.q = q_safe
         self.pink_config.update()
 
-        # Build target transform in Pinocchio root frame
+        # Build target transform in Pinocchio root (pelvis) frame
         if rpy is not None:
-            rot_matrix = pin.utils.rpyToMatrix(float(rpy[0]), float(rpy[1]), float(rpy[2]))
+            rot_world = pin.utils.rpyToMatrix(float(rpy[0]), float(rpy[1]), float(rpy[2]))
+            rot_matrix = self.world_rot_to_pelvis(rot_world) if in_world_frame else rot_world
         else:
             rot_matrix = self.pink_config.get_transform_frame_to_world(body_name).rotation
 
@@ -288,10 +303,11 @@ class PinkG1Controller:
         target_pos: np.ndarray,
         target_rpy: np.ndarray | None = None,
         body_name: str = "right_wrist_yaw_link",
-        dt: float = 0.002
+        dt: float = 0.002,
+        in_world_frame: bool = True
     ) -> np.ndarray:
         """Convenience method: Solves Pink IK, computes PD torques, and applies to data.ctrl."""
-        q_des = self.solve_reach(target_pos, target_rpy, body_name, dt)
+        q_des = self.solve_reach(target_pos, target_rpy, body_name, dt, in_world_frame=in_world_frame)
         torques = self.compute_pd_torques(q_des)
         self.mj_data.ctrl[:] = torques
         return q_des
