@@ -1,0 +1,9 @@
+schema: wbc_motion_library_v1
+dataset: hackathon
+robot: g1
+bundle: null
+bundle_path: /mnt/idfk/programming_stuff/SKF_Hackathon/third_party/wbc-mjlab/data/g1/hackathon
+num_clips: 3
+total_frames: 4032
+fps: 50.0
+clips: [bow, step_touch, walk]
