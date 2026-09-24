@@ -120,8 +120,8 @@ class ClipReference:
     def anchor_frame(self, idx: int, anchor_idx: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Return (pos, quat_wxyz, lin_vel_w, ang_vel_w) of the anchor body at frame idx."""
         i = min(int(idx), self.n_frames - 1)
-        quat_xyzw = self.body_quat_w[i, anchor_idx]
-        quat_wxyz = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
+        # NPZ quats are stored wxyz (mjlab/MuJoCo convention); MuJoCo expects wxyz.
+        quat_wxyz = np.asarray(self.body_quat_w[i, anchor_idx], dtype=np.float64)
         return (
             self.body_pos_w[i, anchor_idx].copy(),
             quat_wxyz,
@@ -163,9 +163,12 @@ def quat_to_matrix(q: np.ndarray) -> np.ndarray:
 
 
 def quat_yaw(q: np.ndarray) -> np.ndarray:
-    """Yaw-only wxyz quaternion from a full wxyz quaternion."""
+    """Yaw-only wxyz quaternion from a full wxyz quaternion (identity if degenerate)."""
     q = np.asarray(q, dtype=np.float64)
-    w, x, y, z = q / np.linalg.norm(q)
+    norm = np.linalg.norm(q)
+    if not np.isfinite(norm) or norm < 1e-8:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    w, x, y, z = q / norm
     yaw = 2.0 * np.arctan2(z, w)
     return np.array([np.cos(yaw / 2.0), 0.0, 0.0, np.sin(yaw / 2.0)], dtype=np.float64)
 
@@ -241,6 +244,9 @@ class WbcPhysicsRunner:
         """Load a clip, resample to the policy rate, and anchor its frame-0 pose to the robot."""
         self.clip = ClipReference(clip_path, target_fps=1.0 / self.policy_step_dt)
         self.frame = 0
+        # Populate xpos/xquat before reading the robot pose: a fresh MjData has
+        # zeroed orientation fields, which would poison the anchor with NaNs.
+        mj.mj_forward(self.mj_model, self.mj_data)
         ref_pos, ref_quat, _, _ = self.clip.anchor_frame(0, self.npz_anchor_idx)
         robot_anchor_pos = np.asarray(self.mj_data.xpos[self.anchor_body_id], dtype=np.float64)
         robot_anchor_quat = np.asarray(self.mj_data.xquat[self.anchor_body_id], dtype=np.float64)
