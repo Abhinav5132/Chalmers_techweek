@@ -14,11 +14,15 @@ dependencies = [
     "qpsolvers>=4.0.0",
     "proxsuite>=0.6.0",
     "quadprog>=0.1.12",
+    "mcp>=1.26,<2",
 ]
 
 [tool.ty.analysis]
 allowed-unresolved-imports = ["mujoco.*", "pinocchio.*", "pink.*"]
 
+[tool.ty.environment]
+# Pinocchio's binary wheel installs beneath cmeel.prefix (Python 3.11).
+extra-paths = [".venv/lib/python3.11/site-packages/cmeel.prefix/lib/python3.11/site-packages"]
+
 [tool.ty.rules]
 unresolved-attribute = "ignore"
-
