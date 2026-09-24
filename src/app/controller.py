@@ -173,36 +173,64 @@ class SkillApp:
         return 0
 
     def export(self) -> int:
-        """Export the trained policy to models/params/policy.onnx + config.yaml."""
-        _run(
-            [
-                _wbc_python(),
-                "-m",
-                "wbc_mjlab.scripts.chain",
-                "--motion-source",
-                str(WBC_DATASET_DIR),
-                "--chain",
-                "walk",
-                "--export-models",
-                str(MODELS_DIR),
-            ],
-            cwd=WBC_DIR,
-        )
+        """Export the latest trained policy to models/params/policy.onnx + config.yaml."""
+        checkpoint = self._latest_checkpoint()
+        cmd = [
+            _wbc_python(),
+            "-m",
+            "wbc_mjlab.scripts.chain",
+            "--motion-source",
+            str(WBC_DATASET_DIR),
+            "--chain",
+            "walk",
+            "--export-models",
+            str(MODELS_DIR),
+        ]
+        if checkpoint is not None:
+            cmd += ["--checkpoint-file", str(checkpoint)]
+        _run(cmd, cwd=WBC_DIR)
         return 0
+
+    def _latest_checkpoint(self) -> Path | None:
+        """Most recent trained checkpoint in the wbc logs (highest iteration)."""
+        log_root = WBC_DIR / "logs" / "rsl_rl" / "wbc_g1"
+        if not log_root.is_dir():
+            return None
+        best: Path | None = None
+        best_iter = -1
+        for run_dir in log_root.iterdir():
+            if not run_dir.is_dir():
+                continue
+            for pt in run_dir.glob("model_*.pt"):
+                try:
+                    it = int(pt.stem.split("_", 1)[1])
+                except ValueError:
+                    continue
+                # Only use checkpoints from a real training run (not iter 0).
+                if it > best_iter:
+                    best_iter = it
+                    best = pt
+        return best
 
     # --- play --------------------------------------------------------------
 
-    def play(self) -> int:
-        """Run the trained policy through the current chain in plain MuJoCo."""
-        if self.chain.is_empty:
-            raise RuntimeError("No chain built. Add motions to the chain first.")
+    def play(self, chain: list[str] | None = None) -> int:
+        """Run the trained policy through the chain in plain MuJoCo.
+
+        ``chain`` is optional; when omitted the current in-memory chain is used.
+        """
+        names = chain if chain is not None else self.chain.names
+        if not names:
+            raise RuntimeError("No chain built. Pass --chain or add motions first.")
+        for name in names:
+            self._require_motion(name)
         _run(
             [
                 _main_python(),
                 "-m",
                 "src.run_workflow",
                 "--chain",
-                *self.chain.names,
+                *names,
             ],
             cwd=PROJECT_ROOT,
         )

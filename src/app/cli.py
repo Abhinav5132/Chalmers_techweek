@@ -39,7 +39,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     sub.add_parser("export", help="Export trained policy to models/params/.")
 
-    sub.add_parser("play", help="Play the trained chain in plain MuJoCo.")
+    p_play = sub.add_parser("play", help="Play the trained chain in plain MuJoCo.")
+    p_play.add_argument("--chain", nargs="+", help="Motion names to play (order = sequence).")
 
     return parser.parse_args(argv)
 
@@ -65,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "export":
         return app.export()
     if args.command == "play":
-        return app.play()
+        return app.play(chain=args.chain)
     return 0
 
 

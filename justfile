@@ -155,9 +155,9 @@ wbc-train-quick envs="1024" iters="3000":
 wbc-export:
     @uv run python -m src.app.cli export
 
-# Play the trained policy through the current chain in plain MuJoCo (main-project runtime)
-play-chain:
-    @uv run python -m src.app.cli play
+# Play the trained policy through a chain in plain MuJoCo (main-project runtime)
+play-chain clips="walk step_touch bow":
+    @uv run python -m src.app.cli play --chain {{clips}}
 
 # Launch the DearPyGui desktop window (preview / chain / train / play)
 gui:
