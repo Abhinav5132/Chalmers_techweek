@@ -3,7 +3,7 @@ from gymnasium import spaces
 import mujoco
 import numpy as np
 
-
+# Train robot to stand (not walk yet)
 class G1WalkEnv(gym.Env):
     def __init__(self, model_path="../unitree_mujoco/unitree_robots/g1/scene_29dof.xml", terrain_generator=None, use_pd=True):
         self.model = mujoco.MjModel.from_xml_path(model_path)
