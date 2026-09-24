@@ -189,6 +189,10 @@ This project uses [`just`](https://github.com/casey/just) and [`uv`](https://git
 | `just check` | Run static type checking with Astral **ty** (`uv run ty check`). |
 | `just setup-urdf` | Download the official G1 29-DoF URDF from Unitree description repo. |
 
+On macOS, the viewer commands automatically use MuJoCo’s `mjpython` launcher.
+For direct interactive execution on macOS, replace `uv run python` with
+`uv run mjpython`; headless execution can still use `uv run python`.
+
 ### Running the Standing Controller
 
 **Interactive Viewer (Anchored Test Gantry)**:
@@ -198,7 +202,7 @@ just stand
 
 **Headless / CI Mode**:
 ```bash
-uv run python src/test_pink_ik.py --headless
+uv run python src/test_pink_ik.py --stand --headless
 ```
 
 **Direct Execution via `uv`**:
@@ -244,6 +248,14 @@ All code in `src/` must pass with **0 diagnostics**.
 ---
 
 ## 4. Troubleshooting & Linux Notes
+
+### `AttributeError: module 'pinocchio' has no attribute 'Model'`
+
+The robotics Pinocchio library is installed through the **`pin`** dependency.
+The unrelated PyPI package named `pinocchio` shadows its Python imports.
+Keep only `pin` in the project dependencies and run `uv sync` to remove the
+conflicting package. Do not add `pinocchio` with pip or uv.
+
 
 ### Warning: `Failed to load plugin 'libdecor-gtk.so': failed to init`
 * **What it is**: `libdecor` is a client-side window decoration library used by GLFW/MuJoCo on Wayland desktops (Ubuntu, Fedora, Arch) to render window borders and title bars.
