@@ -43,6 +43,10 @@ def parse_args() -> argparse.Namespace:
         help="Playback speed multiplier (default: 1.0).",
     )
     parser.add_argument(
+        "--exit-on-finish", action="store_true",
+        help="Close the viewer when a single playback finishes.",
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         help="Run without GUI viewer for testing/CI.",
@@ -98,7 +102,7 @@ def main() -> None:
 
     has_display: bool = (
         not args.headless
-        and (sys.platform == "darwin" or "DISPLAY" in os.environ or "WAYLAND_DISPLAY" in os.environ)
+        and (sys.platform in ("darwin", "win32") or "DISPLAY" in os.environ or "WAYLAND_DISPLAY" in os.environ)
         and VIEWER_AVAILABLE
     )
 
@@ -131,6 +135,8 @@ def main() -> None:
 
                 if not args.loop:
                     print("Motion playback finished.")
+                    if args.exit_on_finish:
+                        break
                     while viewer.is_running():
                         time.sleep(0.1)
                     break
