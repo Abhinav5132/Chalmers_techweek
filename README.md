@@ -12,11 +12,15 @@ This project uses [`just`](https://github.com/casey/just) and [`uv`](https://git
 
 | Command | Description |
 | :--- | :--- |
-| `just stand` / `just test` | Run the G1 standing controller test (holding calibrated stance with pelvis gantry anchor). |
-| `just test-free` | Run standing test with unanchored floating base (requires active balance policy). |
+| `just init` | **One-command full setup**: sets up G1 model, URDF, motion clips, uv dependencies, and checks types. |
+| `just stand` | Run the G1 standing controller test (holding calibrated stance with pelvis anchor). |
+| `just test` | Run the Pink QP arm reaching test (right arm reaches to table target). |
+| `just play-walk` | Replay the retargeted G1 **forward walking** motion clip (`walk.npz`). |
+| `just play-step` | Replay the retargeted G1 **side stepping** motion clip (`step_touch.npz`). |
+| `just play-bow` | Replay the retargeted G1 **bowing / crouching** motion clip (`bow.npz`). |
+| `just download-motions` | Pull sample G1 motion clips (`.npz`) from Hugging Face `exptech/g1-moves`. |
 | `just sim` | Launch the default **G1 29-DoF** simulation scene in the MuJoCo viewer. |
 | `just sim-23dof` | Launch the **G1 23-DoF** variant scene. |
-| `just sim <scene.xml>` | Launch a custom MuJoCo simulation scene. |
 | `just check` | Run static type checking with Astral **ty** (`uv run ty check`). |
 | `just setup-urdf` | Download the official G1 29-DoF URDF from Unitree description repo. |
 
