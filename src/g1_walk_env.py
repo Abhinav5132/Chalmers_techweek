@@ -7,11 +7,7 @@ import numpy as np
 # pos="0 0 20" — disconnected from the actual kinematic chain. They have
 # actuators/sensors defined but moving them does nothing to the robot.
 # We exclude them so the policy's action/obs space only covers real DOFs.
-DISCONNECTED_ACTUATORS = {
-    "waist_roll", "waist_pitch",
-    "left_wrist_pitch", "left_wrist_yaw",
-    "right_wrist_pitch", "right_wrist_yaw",
-}
+DISCONNECTED_ACTUATORS = set()
 
 
 class G1WalkEnv(gym.Env):
@@ -109,6 +105,10 @@ class G1WalkEnv(gym.Env):
         obs = self._get_obs()
         reward = self._compute_reward(action)
         terminated = self._check_fall()  # episode ends early due to failure
+        
+        if terminated:
+            reward -= 10.0  # sharp penalty specifically for the failure event
+
         self._step_count += 1
         truncated = self._step_count >= self.max_episode_steps  # episode ends due to time limit
 
@@ -124,15 +124,52 @@ class G1WalkEnv(gym.Env):
         #   - gravity vector in the pelvis/base frame (orientation proxy)
         #   - base angular velocity (e.g. from the imu_gyro sensor)
         #   - self.last_action
-        pass
+        # Joint positions and velocities for the 23 active joints only.
+        qpos = np.array([self.data.qpos[self.model.jnt_qposadr[j]] for j in self.active_joint_ids])
+        qvel = np.array([self.data.qvel[self.model.jnt_dofadr[j]] for j in self.active_joint_ids])
+
+        # Base orientation as a gravity vector: rotate the world "down" vector
+        # into the pelvis's local frame. This is more robust for the policy to
+        # learn from than a raw quaternion, since it's a direct signal of "which
+        # way is down relative to my body" rather than an abstract 4D rotation.
+        pelvis_id = self.model.body("pelvis").id
+        xmat = self.data.xmat[pelvis_id].reshape(3, 3)  # pelvis's world rotation matrix
+        gravity_world = np.array([0, 0, -1.0])
+        gravity_local = xmat.T @ gravity_world  # world->local: transpose of rotation matrix
+
+        # Base angular velocity, read from the imu_gyro sensor already defined
+        # in the XML (attached to the "imu" site on the pelvis).
+        ang_vel = self.data.sensor("imu_gyro").data.copy()
+
+        obs = np.concatenate([qpos, qvel, gravity_local, ang_vel, self.last_action]).astype(np.float32)
+        return obs
 
     def _compute_reward(self, action):
         # TODO: reward shaping
         #   + forward velocity tracking (reward matching a target velocity)
         #   - torque penalty (discourage wasteful/jerky control effort)
         #   - large penalty on falling (paired with _check_fall)
+        # Small constant reward for every step the robot stays alive/upright.
+        # This is what teaches the policy "not falling is good" — without it,
+        # there's no positive signal at all, just penalties.
+        alive_bonus = 1.0
 
-        pass
+        # Penalize large torques — discourages jerky, high-effort control and
+        # nudges the policy toward smoother, more efficient motion.
+        torque_penalty = 0.001 * np.sum(np.square(self.data.ctrl[self.active_actuator_ids]))
+
+        # Penalize deviation from upright orientation, using the same gravity
+        # vector computed in _get_obs. Perfectly upright = gravity_local ≈ (0, 0, -1).
+        pelvis_id = self.model.body("pelvis").id
+        xmat = self.data.xmat[pelvis_id].reshape(3, 3)
+        gravity_local = xmat.T @ np.array([0, 0, -1.0])
+        upright_penalty = 0.5 * (1.0 - (-gravity_local[2]))  # 0 when upright, up to 1 when tipped
+
+        # Penalize jerky action changes step-to-step (encourages smoothness).
+        action_rate_penalty = 0.01 * np.sum(np.square(action - self.last_action))
+
+        reward = alive_bonus - torque_penalty - upright_penalty - action_rate_penalty
+        return reward
 
     def _check_fall(self):
         # TODO: define a failure condition, e.g.:
@@ -140,7 +177,19 @@ class G1WalkEnv(gym.Env):
         #   - base tilt (from the gravity vector) exceeds some angle
         # Without this, episodes never terminate early and the policy gets
         # no clear "you failed" signal.
-        pass
+        pelvis_height = self.data.qpos[2]  # z-position of the free joint (pelvis)
+        if pelvis_height < 0.5:  # standing height is ~0.79; well below that = collapsed
+            return True
+
+        # Also fail on excessive tilt: if gravity_local's z-component drops far
+        # from -1 (upright), the robot has tipped over significantly.
+        pelvis_id = self.model.body("pelvis").id
+        xmat = self.data.xmat[pelvis_id].reshape(3, 3)
+        gravity_local = xmat.T @ np.array([0, 0, -1.0])
+        if gravity_local[2] > -0.5:  # roughly > 60° tilt from upright
+            return True
+
+        return False
 
     def _scale_action(self, action):
         # Maps each normalized action component to either:
@@ -149,35 +198,27 @@ class G1WalkEnv(gym.Env):
         # depending on self.use_pd. Unused actuator slots (the 6 disconnected
         # ones) are left at 0 in ctrl since we never write to their indices.
         ctrl = np.zeros(self.model.nu)
+        action_scale = 0.3  # max radians of deviation from resting pose per joint — tune this
 
         for local_i, act_id in enumerate(self.active_actuator_ids):
             joint_id = self.active_joint_ids[local_i]
-
-            # Index into qpos/qvel for this joint's position/velocity.
             qpos_adr = self.model.jnt_qposadr[joint_id]
             qvel_adr = self.model.jnt_dofadr[joint_id]
-
-            # This joint's physical range of motion, from the XML.
             lo, hi = self.model.jnt_range[joint_id]
 
             if self.use_pd:
-                # Map action in [-1, 1] to a target angle within [lo, hi].
-                target_angle = lo + (action[local_i] + 1) * 0.5 * (hi - lo)
+                # Target = resting pose (0) + a small scaled offset, clipped to
+                # the joint's real physical range. NOT the range midpoint.
+                target_angle = np.clip(action[local_i] * action_scale, lo, hi)
 
-                # Standard PD control law: push toward target angle,
-                # damped by current velocity to avoid oscillation/overshoot.
                 torque = self.kp * (target_angle - self.data.qpos[qpos_adr]) \
                     - self.kd * self.data.qvel[qvel_adr]
 
-                # Clip to the actuator's allowed torque range so we never
-                # command something physically impossible.
                 frc_lo, frc_hi = self.model.actuator_ctrlrange[act_id]
                 ctrl[act_id] = np.clip(torque, frc_lo, frc_hi)
             else:
-                # Raw torque mode: map action in [-1, 1] directly onto the
-                # actuator's torque range (no PD, no target angle).
                 frc_lo, frc_hi = self.model.actuator_ctrlrange[act_id]
-                ctrl[act_id] = lo + (action[local_i] + 1) * 0.5 * (frc_hi - frc_lo)
+                ctrl[act_id] = action[local_i] * (frc_hi - frc_lo) * 0.5
 
         return ctrl
 
