@@ -4,7 +4,7 @@
 
 This platform enables visual, modular, and natural-language-driven control for the **Unitree G1 29-DOF Humanoid Robot** in MuJoCo. The system couples:
 1. **Reinforcement Learning via `wbc-mjlab`**: A universal whole-body motion tracking RL policy trained natively in MuJoCo (leveraging MuJoCo Warp). Under the "one policy, many motions" paradigm, a single RL tracking policy handles dynamic balance, ground impacts, and payload stability across varying motion clips.
-2. **Pre-Retargeted Motion Library**: Pre-built `.npz` motion sequences (e.g. from `exptech/g1-moves` and `openhe/g1-retargeted-motions`) providing instant, fluid human-like behaviors (walking, turning, crouching, waving) without individual reward engineering.
+2. **Pre-Retargeted Motion Library**: Public G1 motion libraries (e.g. `exptech/g1-moves` and `openhe/g1-retargeted-motions`) providing instant, fluid human-like behaviors (walking, turning, crouching, waving) without individual reward engineering. Source clips are retargeted and re-gridded to the policy's 50 Hz frame clock before use.
 3. **Pink Kinematic Tasks (QP-based Inverse Kinematics)**: For high-precision Cartesian end-effector positioning, arm reaching, and dynamic trajectory generation for mobile manipulation (e.g., carrying boxes).
 4. **Decoupled Loco-Manipulation Mode**: Simultaneous execution where `wbc-mjlab` RL drives the lower-body bipedal locomotion while Pink actively stabilizes the arms to hold objects.
 5. **AI Task Assistant & Chat Interface**: An LLM agent that parses natural language instructions (e.g., *"reach 25cm forward at table height and pick up the bearing box"*) into structured Pink task parameters.
@@ -117,6 +117,7 @@ graph TD
 * **Application**: 
   1. Instant millimeter-accurate reaching tasks while standing.
   2. Stabilizing arm poses relative to the chest during mobile box carrying.
+* **Motion Preview (pre-commit validation)**: The Phase-1 Pink + `motion_tracker` path doubles as a **viewer-side best-case preview**. Before committing compute to RL training, a user can scrub a raw motion in the viewer to visually confirm the intended pose/timing — a cheap, kinematic "is this the motion I want?" check that is not a physics guarantee.
 
 ### 3.4. Reinforcement Learning via `wbc-mjlab`
 * **Role**: Universal whole-body motion tracking with active bipedal balance and contact handling.
@@ -127,6 +128,16 @@ graph TD
 * **"One Policy, Many Motions"**:
   - Walking, turning, and crouching do not need separate training runs.
   - Different skills simply feed different reference `.npz` clips into the tracking policy.
+* **Control clock (50 Hz frame contract)**:
+  - The policy is a discrete-time controller with a fixed `policy_step_dt` of **0.02 s (50 Hz)**. The mapping "where am I → what forces" was learned at this cadence, so it must not change.
+  - The policy consumes **exactly one clip frame per policy step**. Clips therefore must be **50 Hz**, or the reference plays at the wrong speed (a 60 fps clip would run 20% too fast). Raw clips at other rates (e.g. the 60 fps hackathon clips) are re-gridded to 50 Hz with linear + quaternion-slerp interpolation — the motion duration is preserved, only the frame grid changes.
+* **Adding a new motion (retarget → fine-tune → export)**:
+  1. **Retarget** the mocap / Blender animation onto the G1 skeleton (joint limits, limb lengths) and export as `.npz` in the wbc schema.
+  2. **Resample to 50 Hz** (`src/controllers/clip_resample.py`, the same step used by `wbc-setup-clips`).
+  3. **Fine-tune** the existing brain on a dataset containing the new clip rather than training from scratch. This reuses the general "how to be a balanced biped" knowledge and only adapts it to the new routine — far faster than a cold-start retrain.
+  4. **Export** the updated brain to `policy.onnx` + `config.yaml` (`wbc-export`) for the deploy runtime.
+  - The brain stores *skill*, not a fixed list of moves; new motions are added by continuing to train the same brain, so a single policy can accumulate many routines.
+  - Fine-tuning is the mjlab **resume** path: `wbc-mjlab-train --task Wbc-G1 --dataset <set> --agent.resume true --agent.load-run <run> --agent.load-checkpoint <checkpoint>` loads the existing brain (`runner.load(...)`) and continues learning on the new dataset instead of starting from scratch.
 
 ### 3.5. Mobile Manipulation (Carrying Objects)
 * **Decoupled Control**:
@@ -211,12 +222,21 @@ graph TD
 - [x] MuJoCo G1 model loaded in viewer (`g1_29dof.xml`).
 - [x] Implement standalone Pink arm reaching & Whole-Body CoM standing in MuJoCo.
 - [x] Download and inspect sample G1 motion clips (`.npz`) from `g1-moves`.
+- [x] **Motion preview tool**: viewer-side best-case playback of a raw clip via Pink + `motion_tracker`, used to sanity-check a motion before committing to training.
 
-### Phase 2: `wbc-mjlab` RL Tracking & Decoupled Loco-Manipulation
-- [ ] Set up `wbc-mjlab` tracking inference runner in Python.
-- [ ] Test tracking playback of standard locomotion clips (`walk.npz`, `crouch.npz`).
-- [ ] Implement decoupled control: `wbc-mjlab` for lower-body balance + Pink for upper-body box holding.
-- [ ] Add MuJoCo `<weld>` constraint trigger for reliable box transport.
+### Phase 2: WBC Physics Simulation Runner & Scripting Engine
+- [x] Implement continuous high-frequency reference motion tracking (`src/controllers/motion_tracker.py`).
+- [x] Build WBC closed-loop physics tracking runner with ONNX policy inference support (`src/controllers/wbc_runner.py`).
+- [x] Build workflow scripting engine with composable skill nodes (`MotionClipNode`, `PinkReachNode`, `StandHoldNode`) in `src/engine/workflow_engine.py`.
+- [x] Provide automated workflow execution script and headless test (`src/run_workflow.py`).
+- [x] 50 Hz clip resampling (`src/controllers/clip_resample.py`), used by both the runtime and `wbc-setup-clips`.
+- [ ] **Environment bring-up** (`wbc-sync`): install the wbc-mjlab RL environment (GPU torch + CUDA). Blocks all execution below.
+- [ ] **Validate on samples**: `wbc-convert-samples` + `chain-samples` to confirm the chained runner tracks with the bundled checkpoint.
+- [ ] **Train / fine-tune on the project clips**: `wbc-train` (fine-tune the bundled brain on `walk`/`step_touch`/`bow`, or cold-start on a small library).
+- [ ] **Export deploy artifacts**: `wbc-export` → `models/params/policy.onnx` + `config.yaml`.
+- [ ] **End-to-end chain**: `run_workflow --chain walk step_touch bow` with real physics, no pelvis anchoring.
+
+> **Note on status**: the Phase-2 code is structurally complete and type-checks, but has not yet been executed — it requires the RL environment sync plus a trained/exported policy bundle to actually run. Roadmap items above marked `[ ]` are the remaining execution-and-validation steps.
 
 ### Phase 3: Dear PyGui Drag-and-Drop Sequencer
 - [ ] Create main Dear PyGui desktop window with embedded/side-by-side MuJoCo simulation loop.

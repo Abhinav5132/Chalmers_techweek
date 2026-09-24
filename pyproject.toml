@@ -14,10 +14,13 @@ dependencies = [
     "qpsolvers>=4.0.0",
     "proxsuite>=0.6.0",
     "quadprog>=0.1.12",
+    "onnxruntime>=1.30.0",
+    "pyyaml>=6.0.0",
 ]
 
+
 [tool.ty.analysis]
-allowed-unresolved-imports = ["mujoco.*", "pinocchio.*", "pink.*"]
+allowed-unresolved-imports = ["mujoco.*", "pinocchio.*", "pink.*", "onnxruntime.*"]
 
 [tool.ty.rules]
 unresolved-attribute = "ignore"

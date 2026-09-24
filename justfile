@@ -139,14 +139,58 @@ play-bow:
     @just play data/motions/bow.npz
 
 
+# === wbc-mjlab RL tracking stack (separate env in third_party/wbc-mjlab) ===
+
+wbc_dir := "third_party/wbc-mjlab"
+wbc_motion_dir := "data/g1/hackathon"
+
+# Sync the wbc-mjlab RL environment (GPU torch + CUDA wheels, ~4GB; resumes from cache)
+wbc-sync:
+    @cd {{wbc_dir}} && uv sync --extra cu128 --group dev
+
+# Convert bundled sample clips (LAFAN/SEED) to npz (run once after wbc-sync)
+wbc-convert-samples:
+    @cd {{wbc_dir}} && uv run wbc-mjlab-data-to-npz --robot g1 --dataset samples --batch-size 4
+
+# Resample the project's motion clips to 50 Hz into the wbc-mjlab dataset layout
+wbc-setup-clips:
+    @uv run python -m src.controllers.clip_resample \
+        --src-dir data/motions --dest-dir {{wbc_dir}}/data/g1/hackathon/npz \
+        --fps 50 walk step_touch bow
+    @echo "Hackathon clip library (50 Hz) ready at {{wbc_dir}}/data/g1/hackathon/npz/"
+
+# Run the chained clip sequence with the trained policy (headless metrics)
+chain clips="walk step_touch bow":
+    @cd {{wbc_dir}} && uv run python -m wbc_mjlab.scripts.chain \
+        --motion-source {{wbc_motion_dir}} --chain {{clips}}
+
+# Validate the chain runner headless on the bundled samples (smoke test)
+chain-samples:
+    @cd {{wbc_dir}} && uv run python -m wbc_mjlab.scripts.chain \
+        --motion-source data/g1/samples --chain walk1_subject1 --loops 2
+
+# Train a WBC policy on the hackathon clip library (teammate's pipeline)
+wbc-train:
+    @cd {{wbc_dir}} && uv run wbc-mjlab-train --task Wbc-G1 --dataset hackathon
+
+# Play a single clip with the trained policy in the interactive viser viewer
+wbc-play dataset="hackathon":
+    @cd {{wbc_dir}} && uv run wbc-mjlab-play --task Wbc-G1 --dataset {{dataset}}
+
+# Export deploy artifacts (policy.onnx + config.yaml) into models/
+wbc-export:
+    @cd {{wbc_dir}} && uv run python -m wbc_mjlab.scripts.chain \
+        --motion-source data/g1/hackathon --chain walk \
+        --export-models ../../models
+
 # Run static type checking with ty
 check:
     @if command -v uv >/dev/null 2>&1; then \
-        uv run ty check; \
+        uv run ty check src; \
     elif command -v ty >/dev/null 2>&1; then \
-        ty check; \
+        ty check src; \
     else \
-        echo "ty is not installed. Run: uv run ty check"; \
+        echo "ty is not installed. Run: uv run ty check src"; \
     fi
 
 
