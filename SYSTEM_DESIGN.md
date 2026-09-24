@@ -230,8 +230,8 @@ graph TD
 - [x] Build workflow scripting engine with composable skill nodes (`MotionClipNode`, `PinkReachNode`, `StandHoldNode`) in `src/engine/workflow_engine.py`.
 - [x] Provide automated workflow execution script and headless test (`src/run_workflow.py`).
 - [x] 50 Hz clip resampling (`src/controllers/clip_resample.py`), used by both the runtime and `wbc-setup-clips`.
-- [ ] **Environment bring-up** (`wbc-sync`): install the wbc-mjlab RL environment (GPU torch + CUDA). Blocks all execution below.
-- [ ] **Validate on samples**: `wbc-convert-samples` + `chain-samples` to confirm the chained runner tracks with the bundled checkpoint.
+- [x] **Environment bring-up** (`wbc-sync`): install the wbc-mjlab RL environment (GPU torch + CUDA). Blocks all execution below.
+- [x] **Validate on samples**: `wbc-convert-samples` + `chain-samples` to confirm the chained runner tracks with the bundled checkpoint.
 - [ ] **Train / fine-tune on the project clips**: `wbc-train` (fine-tune the bundled brain on `walk`/`step_touch`/`bow`, or cold-start on a small library).
 - [ ] **Export deploy artifacts**: `wbc-export` → `models/params/policy.onnx` + `config.yaml`.
 - [ ] **End-to-end chain**: `run_workflow --chain walk step_touch bow` with real physics, no pelvis anchoring.
@@ -239,7 +239,8 @@ graph TD
 > **Note on status**: the Phase-2 code is structurally complete and type-checks, but has not yet been executed — it requires the RL environment sync plus a trained/exported policy bundle to actually run. Roadmap items above marked `[ ]` are the remaining execution-and-validation steps.
 
 ### Phase 3: Dear PyGui Drag-and-Drop Sequencer
-- [ ] Create main Dear PyGui desktop window with embedded/side-by-side MuJoCo simulation loop.
+- [] **App layer** (`src/app/controller.py`): single `SkillApp` API exposing preview / chain / train / play / export / setup, backed by a CLI (`src/app/cli.py`).
+- [] **Initial GUI** (`src/gui/main.py`): motion list with preview buttons, chain builder, train/export/play buttons, and one-command wbc setup.
 - [ ] Implement `dpg.node_editor` with custom nodes for Motion Clips, Pink Reaching, and Parallel Loco-Manipulation.
 - [ ] Implement DAG exporter converting visual node connections into execution JSON.
 

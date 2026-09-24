@@ -65,6 +65,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run headless for automated testing/CI.",
     )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=200000,
+        help="Safety cap on total policy steps (headless mode).",
+    )
     return parser.parse_args()
 
 
@@ -119,7 +125,7 @@ def main() -> None:
     else:
         print("\nRunning workflow in headless mode...")
         step_i = 0
-        while not engine.is_finished and step_i < 200000:
+        while not engine.is_finished and step_i < args.max_steps:
             engine.step(dt=policy_dt)
             if step_i % 1000 == 0:
                 name = engine.current_node.name if engine.current_node else "Done"
