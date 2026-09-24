@@ -151,6 +151,10 @@ wbc-train:
 wbc-train-quick envs="1024" iters="3000":
     @uv run python -m src.app.cli train --envs {{envs}} --iters {{iters}}
 
+# Fine-tune from the bundled checkpoint instead of scratch (much faster convergence)
+wbc-finetune envs="512" iters="1000":
+    @uv run python -m src.app.cli train --envs {{envs}} --iters {{iters}} --from-bundled
+
 # Export deploy artifacts (policy.onnx + config.yaml) into models/
 wbc-export:
     @uv run python -m src.app.cli export

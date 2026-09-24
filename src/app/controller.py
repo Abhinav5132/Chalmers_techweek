@@ -32,6 +32,7 @@ class TrainConfig:
     envs: int = 1024
     iterations: int = 3000
     save_interval: int = 250
+    from_bundled: bool = False
 
 
 @dataclass
@@ -152,25 +153,44 @@ class SkillApp:
     def train(self, cfg: TrainConfig | None = None) -> int:
         """Train/fine-tune a WBC policy on the current clip library."""
         cfg = cfg or TrainConfig()
-        _run(
-            [
-                _wbc_python(),
-                "-m",
-                "wbc_mjlab.scripts.train",
-                "--task",
-                "Wbc-G1",
-                "--dataset",
-                "hackathon",
-                "--env.scene.num-envs",
-                str(cfg.envs),
-                "--agent.max-iterations",
-                str(cfg.iterations),
-                "--agent.save-interval",
-                str(cfg.save_interval),
-            ],
-            cwd=WBC_DIR,
-        )
+        args = [
+            _wbc_python(),
+            "-m",
+            "wbc_mjlab.scripts.train",
+            "--task",
+            "Wbc-G1",
+            "--dataset",
+            "hackathon",
+            "--env.scene.num-envs",
+            str(cfg.envs),
+            "--agent.max-iterations",
+            str(cfg.iterations),
+            "--agent.save-interval",
+            str(cfg.save_interval),
+        ]
+        if cfg.from_bundled:
+            args += self._resume_from_bundled_args()
+        _run(args, cwd=WBC_DIR)
         return 0
+
+    def _resume_from_bundled_args(self) -> list[str]:
+        """Point resume at a copy of the bundled checkpoint in the run log path."""
+        run_dir = WBC_DIR / "logs" / "rsl_rl" / "wbc_g1" / "bundled"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        dst = run_dir / "model_0.pt"
+        bundled = WBC_DIR / "demos" / "wbc_g1" / "model.pt"
+        if not dst.exists():
+            import shutil
+
+            shutil.copyfile(bundled, dst)
+        return [
+            "--agent.resume",
+            "True",
+            "--agent.load-run",
+            "bundled",
+            "--agent.load-checkpoint",
+            "model_0.pt",
+        ]
 
     def export(self) -> int:
         """Export the latest trained policy to models/params/policy.onnx + config.yaml."""
@@ -192,25 +212,30 @@ class SkillApp:
         return 0
 
     def _latest_checkpoint(self) -> Path | None:
-        """Most recent trained checkpoint in the wbc logs (highest iteration)."""
+        """Most recent trained checkpoint in the wbc logs (latest run, highest iteration)."""
         log_root = WBC_DIR / "logs" / "rsl_rl" / "wbc_g1"
         if not log_root.is_dir():
             return None
-        best: Path | None = None
-        best_iter = -1
-        for run_dir in log_root.iterdir():
-            if not run_dir.is_dir():
-                continue
+        runs = sorted(
+            (d for d in log_root.iterdir() if d.is_dir() and d.name != "bundled"),
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
+        for run_dir in runs:
+            best: Path | None = None
+            best_iter = -1
             for pt in run_dir.glob("model_*.pt"):
                 try:
                     it = int(pt.stem.split("_", 1)[1])
                 except ValueError:
                     continue
                 # Only use checkpoints from a real training run (not iter 0).
-                if it > best_iter:
+                if it > 0 and it > best_iter:
                     best_iter = it
                     best = pt
-        return best
+            if best is not None:
+                return best
+        return None
 
     # --- play --------------------------------------------------------------
 

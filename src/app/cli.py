@@ -36,6 +36,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_train = sub.add_parser("train", help="Train/fine-tune the WBC policy.")
     p_train.add_argument("--envs", type=int, default=1024)
     p_train.add_argument("--iters", type=int, default=3000)
+    p_train.add_argument(
+        "--from-bundled",
+        action="store_true",
+        help="Fine-tune from the bundled demos/wbc_g1/model.pt checkpoint instead of scratch.",
+    )
 
     sub.add_parser("export", help="Export trained policy to models/params/.")
 
@@ -62,7 +67,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "setup":
         return app.setup()
     if args.command == "train":
-        return app.train(TrainConfig(envs=args.envs, iterations=args.iters))
+        return app.train(
+            TrainConfig(envs=args.envs, iterations=args.iters, from_bundled=args.from_bundled)
+        )
     if args.command == "export":
         return app.export()
     if args.command == "play":
