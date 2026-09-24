@@ -4,6 +4,9 @@
 default:
     @just --list
 
+# MuJoCo passive viewers require mjpython on macOS.
+viewer_python := if os() == "macos" { "mjpython" } else { "python" }
+
 default_scene := "unitree_mujoco/unitree_robots/g1/scene_29dof.xml"
 
 # Start MuJoCo simulation viewer with a specified scene (default: G1 29-DoF scene)
@@ -108,25 +111,25 @@ download-motions: setup-motions
 # Run the Pink QP arm reaching test (right arm reaches to table target)
 test:
     @if command -v uv >/dev/null 2>&1; then \
-        uv run python src/test_pink_ik.py; \
+        uv run {{viewer_python}} src/test_pink_ik.py; \
     else \
-        python src/test_pink_ik.py; \
+        {{viewer_python}} src/test_pink_ik.py; \
     fi
 
 # Hold calibrated standing stance only (no arm movement)
 stand:
     @if command -v uv >/dev/null 2>&1; then \
-        uv run python src/test_pink_ik.py --stand; \
+        uv run {{viewer_python}} src/test_pink_ik.py --stand; \
     else \
-        python src/test_pink_ik.py --stand; \
+        {{viewer_python}} src/test_pink_ik.py --stand; \
     fi
 
 # Replay a MoCap clip (.npz) on the G1 in MuJoCo
 play clip="data/motions/walk.npz":
     @if command -v uv >/dev/null 2>&1; then \
-        uv run python src/play_motion.py --clip "{{clip}}" --loop; \
+        uv run {{viewer_python}} src/play_motion.py --clip "{{clip}}" --loop; \
     else \
-        python src/play_motion.py --clip "{{clip}}" --loop; \
+        {{viewer_python}} src/play_motion.py --clip "{{clip}}" --loop; \
     fi
 
 play-walk:

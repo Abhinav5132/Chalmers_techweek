@@ -98,7 +98,7 @@ def main() -> None:
 
     has_display: bool = (
         not args.headless
-        and ("DISPLAY" in os.environ or "WAYLAND_DISPLAY" in os.environ)
+        and (sys.platform == "darwin" or "DISPLAY" in os.environ or "WAYLAND_DISPLAY" in os.environ)
         and VIEWER_AVAILABLE
     )
 

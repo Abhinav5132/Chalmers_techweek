@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "mujoco>=3.14.0",
     "numpy>=2.4.6",
+    # The robotics library is distributed as pin, not the unrelated pinocchio package.
     "pin>=3.0.0",
     "pin-pink>=4.4.0",
     "dearpygui>=1.11.0",
@@ -17,8 +18,8 @@ dependencies = [
 ]
 
 [tool.ty.analysis]
-allowed-unresolved-imports = ["mujoco.*", "pinocchio.*", "pink.*"]
+# pin uses a cmeel .pth hook that ty cannot resolve statically.
+allowed-unresolved-imports = ["mujoco.*", "pinocchio", "pinocchio.*", "pink.*"]
 
 [tool.ty.rules]
 unresolved-attribute = "ignore"
-
