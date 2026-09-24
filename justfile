@@ -4,6 +4,22 @@
 default:
     @just --list
 
+# Install the pinned Hermes agent into its own environment.
+agent-install:
+    uv run python src/robot_agent.py install
+
+# Enter your provider URL, model, and API key locally (key input is hidden).
+agent-configure:
+    uv run python src/robot_agent.py configure
+
+# Chat with Hermes using only the robot MCP toolset.
+agent:
+    uv run python src/robot_agent.py chat
+
+# MCP stdio endpoint for Hermes or another MCP client.
+robot-mcp:
+    uv run python src/robot_mcp.py
+
 default_scene := "unitree_mujoco/unitree_robots/g1/scene_29dof.xml"
 
 # Start MuJoCo simulation viewer with a specified scene (default: G1 29-DoF scene)
@@ -148,7 +164,6 @@ check:
     else \
         echo "ty is not installed. Run: uv run ty check"; \
     fi
-
 
 
 
