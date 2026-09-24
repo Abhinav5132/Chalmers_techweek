@@ -209,9 +209,8 @@ graph TD
 
 ### Phase 1: Core Kinematics & Motion Clip Integration
 - [x] MuJoCo G1 model loaded in viewer (`g1_29dof.xml`).
-- [x] Install `pink` and `pinocchio`.
-- [ ] Implement standalone Pink arm reaching & Whole-Body CoM standing in MuJoCo.
-- [ ] Download and inspect sample G1 motion clips (`.npz`) from `g1-moves`.
+- [x] Implement standalone Pink arm reaching & Whole-Body CoM standing in MuJoCo.
+- [x] Download and inspect sample G1 motion clips (`.npz`) from `g1-moves`.
 
 ### Phase 2: `wbc-mjlab` RL Tracking & Decoupled Loco-Manipulation
 - [ ] Set up `wbc-mjlab` tracking inference runner in Python.
