@@ -145,6 +145,15 @@ class MotionPlayer:
             self._start()
             return self._request("play", motion=motion, path=str(self.path(motion)), speed=speed, loop=loop)
 
+    def physics(self, task: str, controller: str = 'student', seconds: float = 10., push_force: float = 0.) -> dict[str, Any]:
+        from physics_session import validate, saved_policy
+        validate(task, controller, seconds, push_force)
+        if controller == 'student':
+            saved_policy(self.root)
+        with self.lock:
+            self._start()
+            return self._request('physics', task=task, controller=controller, seconds=seconds, push_force=push_force)
+
     def stop(self) -> dict[str, Any]:
         """Freeze the current pose, keeping the same window available."""
         with self.lock:
@@ -190,6 +199,28 @@ def list_motions() -> dict[str, Any]:
 
 
 @mcp.tool()
+def list_physics_skills() -> dict[str, Any]:
+    """List saved learned standing/walking controllers and teacher availability."""
+    from physics_session import catalog
+    return catalog()
+
+
+@mcp.tool()
+def run_physics_motion(task: str, controller: str = 'student', seconds: float = 10.,
+                       push_force: float = 0.) -> dict[str, Any]:
+    """Run learned stand/walk using motor torques, gravity and ground contact.
+
+    Use this for ordinary standing/walking requests. controller is student or teacher.
+    Reuses the existing window. Each command resets a trial, not a learned transition.
+    Duration 1–10 seconds; optional 0–100 N pushes last 0.2 s at seconds 2 and 6.
+    Query playback_status for time, falls and completion. A paused/completed viewer
+    freezes physics, not active balance. No training or real robot commands occur.
+    This follows a reference; requested step length is not supported.
+    """
+    return player.physics(task, controller, seconds, push_force)
+
+
+@mcp.tool()
 def play_motion(motion: str, speed: float = 1.0, loop: bool = False) -> dict[str, Any]:
     """Play a listed motion ID in MuJoCo. Speed changes playback time, not step length.
 
@@ -197,6 +228,21 @@ def play_motion(motion: str, speed: float = 1.0, loop: bool = False) -> dict[str
     Returns startup status, not proof of completion. Check playback_status afterward.
     """
     return player.play(motion, speed, loop)
+
+
+@mcp.tool()
+def play_larger_steps(scale: float = 1.25, loop: bool = False) -> dict[str, Any]:
+    """Make the recorded walk visibly take larger steps and show it in the same window.
+
+    scale is 1.05–1.5; 1.25 requests 25% more fore/aft foot reach and root travel.
+    Leg inverse kinematics respects joint limits; report achieved separation and errors.
+    This modifies a recording, not physical walking control or ground-contact step length.
+    Use this tool when the user asks for bigger/longer steps, not playback speed or max_steps.
+    """
+    from longer_steps import make_longer_walk
+    report = make_longer_walk(scale)
+    report['playback'] = player.play(report['motion'], loop=loop)
+    return report
 
 
 @mcp.tool()
@@ -222,6 +268,47 @@ def close_robot_window() -> dict[str, Any]:
     """
     player.close()
     return {"state": "closed", "viewer_open": False}
+
+
+@mcp.tool()
+def run_step_length_experiment(motion: str = "walk", targets: list[float] | None = None,
+                               repetitions: int = 3, max_steps: int = 10,
+                               heading_degrees: float = 0,
+                               show_simulation: bool = True) -> dict[str, Any]:
+    """Measure local recording foot placements against requested lengths in metres.
+
+    Measures the recording, saves per-touchdown CSV and trial/results files, and returns a
+    comparison table. Targets DO NOT change playback; this is a recorded-pose baseline,
+    not physical walking control. Show warnings, incomplete trials and null measurements
+    honestly. Defaults: 0.15/0.20/0.25 m, three deterministic replays, ten valid steps.
+    By default also plays that recording in the persistent robot window, replacing
+    any previous motion. The visualization plays once at real-time speed and holds its
+    final pose. Measurement runs faster separately; the animation is not synchronized
+    to individual trial rows or driven by their target lengths. Set show_simulation=False
+    only for a data-only request. Report any visualization error alongside saved results.
+    """
+    from step_experiment import run_experiment
+    report = run_experiment(motion, targets, repetitions, max_steps, heading_degrees)
+    result = {key: value for key, value in report.items() if key != "trials"}
+    if show_simulation:
+        try:
+            result['visualization'] = player.play(motion)
+        except (OSError, RuntimeError, ValueError) as exc:
+            result['visualization'] = {'state': 'failed', 'error': str(exc)}
+    else:
+        result['visualization'] = {'state': 'not_requested'}
+    return result
+
+
+@mcp.tool()
+def get_step_length_results(experiment_id: str = "latest") -> dict[str, Any]:
+    """Retrieve a saved step-length experiment, including trial outcomes and file paths.
+
+    Display requested/achieved distances, absolute error and completed trials; null
+    measurements mean no valid steps, never zero error. Include baseline limitations.
+    """
+    from step_experiment import read_results
+    return read_results(experiment_id)
 
 
 if __name__ == "__main__":

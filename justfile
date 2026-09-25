@@ -16,11 +16,15 @@ agent-configure:
 
 # Chat with Hermes using only the robot MCP toolset.
 agent:
-    uv run python src/robot_agent.py chat
+    uv run --group training python src/robot_agent.py chat
 
 # MCP stdio endpoint for Hermes or another MCP client.
 robot-mcp:
-    uv run python src/robot_mcp.py
+    uv run --group training python src/robot_mcp.py
+
+# Measure the walking recording against requested step lengths and save CSV/JSON.
+step-experiment:
+    uv run python src/step_experiment.py --show-simulation
 
 default_scene := "unitree_mujoco/unitree_robots/g1/scene_29dof.xml"
 
@@ -168,5 +172,58 @@ check:
     fi
 
 
+# Collect physical teacher demonstrations, train a student on CPU, and evaluate it.
+imitation-train epochs="100" episodes="60":
+    uv run --group training python src/imitation_g1.py all --epochs {{epochs}} --episodes {{episodes}}
+    uv run --group training python src/imitation_report.py --open
 
+# Evaluate the saved student and teacher in real MuJoCo dynamics.
+imitation-evaluate:
+    uv run --group training python src/imitation_g1.py evaluate
+    uv run --group training python src/imitation_report.py --open
 
+# Watch the first trained-student trial; the window stays open until you close it.
+imitation-view:
+    uv run --group training {{viewer_python}} src/imitation_g1.py view
+
+# Open graphs and downloadable data from the existing results without retraining.
+imitation-results:
+    uv run --group training python src/imitation_report.py --open
+
+# Improve the saved student using teacher-labelled corrections from its own rollouts.
+imitation-dagger rounds="5" episodes="30" epochs="100":
+    uv run --group training python src/dagger_g1.py --rounds {{rounds}} --episodes {{episodes}} --epochs {{epochs}}
+    uv run --group training python src/imitation_report.py --open
+
+# Resume supervised training on the original demonstration dataset.
+imitation-resume epochs="100":
+    uv run --group training python src/imitation_g1.py train --resume --epochs {{epochs}}
+    just imitation-evaluate
+
+# Train a separate student for stationary standing and ten-second walking.
+balance-train:
+    uv run --group training python src/balance_training.py train
+    uv run --group training python src/balance_training.py results
+
+# Watch the latest balance student: mode is stand or walk.
+balance-view mode="stand":
+    uv run --group training {{viewer_python}} src/balance_training.py view --mode {{mode}}
+
+balance-results:
+    uv run --group training python src/balance_training.py results
+
+# Teacher-qualified training with gentle pushes, pose changes and friction variation.
+recovery-train:
+    uv run --group training python src/recovery_training.py train
+    uv run --group training python src/recovery_training.py results
+
+# Watch the accepted recovery policy under combined disturbances.
+recovery-view mode="stand" force="8":
+    uv run --group training {{viewer_python}} src/recovery_training.py view --mode {{mode}} --push-force {{force}}
+
+recovery-results:
+    uv run --group training python src/recovery_training.py results
+
+# Compare the latest candidate, including a candidate rejected by validation.
+recovery-candidate mode="stand":
+    uv run --group training {{viewer_python}} src/recovery_training.py view --candidate --mode {{mode}}

@@ -39,6 +39,9 @@ def main():
     context = nullcontext(None) if args.headless else mujoco.viewer.launch_passive(model, data)
     state: dict[str, Any] = {'state': 'idle', 'viewer_open': not args.headless}
     motion = None
+    physics = None
+    physical_active = False
+    next_tick = 0.0
     started = 0.0
     fps = 60.0
     speed = 1.0
@@ -61,6 +64,10 @@ def main():
                             replacement = {key: np.array(clip[key], copy=True) for key in
                                            ('joint_pos', 'body_pos_w', 'body_quat_w')}
                             fps = float(np.asarray(clip['fps']).reshape(-1)[0])
+                        if physics is not None:
+                            model.geom_friction[:] = physics.sim.original_friction
+                        mujoco.mj_resetData(model, data)
+                        physical_active = False
                         motion = replacement
                         speed, loop = command['speed'], command['loop']
                         started = time.monotonic()
@@ -69,9 +76,29 @@ def main():
                                  'mode': 'headless_verification' if args.headless else 'kinematic_playback'}
                     except Exception as exc:
                         error = str(exc)
+                elif action == 'physics':
+                    try:
+                        from physics_session import PhysicsSession
+                        if physics is None:
+                            physics = PhysicsSession(model, data)
+                        state = physics.start(command['task'], command['controller'], command['seconds'], command['push_force'])
+                        state['viewer_open'] = viewer is not None
+                        motion = None
+                        physical_active = True
+                        next_tick = time.monotonic()
+                    except Exception as exc:
+                        error = str(exc)
                 elif action == 'stop':
                     state['state'] = 'stopped'
+                    state['simulation_paused'] = True
                 print(json.dumps({'error': error} if error else state), flush=True)
+            if physical_active and state['state'] == 'running' and (args.headless or time.monotonic() >= next_tick):
+                try:
+                    state = physics.step()
+                    state['viewer_open'] = viewer is not None
+                    next_tick = time.monotonic() + .02
+                except Exception as exc:
+                    state.update(state='failed', error=str(exc), simulation_paused=True)
             if motion is not None and state['state'] == 'running':
                 count = len(motion['joint_pos'])
                 elapsed = (time.monotonic() - started) * (50 if args.headless else 1)
@@ -88,7 +115,7 @@ def main():
                 mujoco.mj_forward(model, data)
             if viewer is not None:
                 viewer.sync()
-            time.sleep(0.01)
+            time.sleep(0.001 if physical_active else 0.01)
 
 
 if __name__ == '__main__':

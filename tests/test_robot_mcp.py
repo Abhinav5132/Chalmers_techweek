@@ -42,6 +42,34 @@ class CatalogTests(unittest.TestCase):
         finally:
             player.close()
 
+    def test_physics_uses_same_worker(self):
+        from physics_session import catalog
+        if not catalog()['student_available'] or not catalog()['teacher_available']:
+            self.skipTest('Train the imitation model first')
+        player = MotionPlayer(headless=True)
+        try:
+            player.play('walk', loop=True)
+            process = player.process
+            state = player.physics('stand', seconds=1)
+            self.assertEqual(state['mode'], 'motor_driven_physics')
+            self.assertIs(player.process, process)
+            deadline = time.monotonic() + 15
+            while player.status()['state'] == 'running' and time.monotonic() < deadline:
+                time.sleep(.02)
+            state = player.status()
+            self.assertEqual(state['state'], 'completed')
+            self.assertEqual(state['control_steps'], 50)
+            self.assertAlmostEqual(state['simulation_seconds'], 1.)
+            self.assertTrue(state['simulation_paused'])
+            player.physics('walk', controller='teacher', seconds=10, push_force=12)
+            self.assertEqual(player.stop()['state'], 'stopped')
+            player.play('bow')
+            self.assertIs(player.process, process)
+            for task, force in [('invalid', 8), ('walk', float('nan'))]:
+                with self.assertRaises(ValueError): player.physics(task, push_force=force)
+        finally:
+            player.close()
+
     def test_paths_and_invalid_clips(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -76,7 +104,17 @@ class CatalogTests(unittest.TestCase):
             async with ClientSession(reader, writer) as session:
                 await session.initialize()
                 names = {t.name for t in (await session.list_tools()).tools}
-                self.assertEqual(names, {"list_motions", "play_motion", "playback_status", "stop_motion", "close_robot_window"})
+                self.assertEqual(names, {"list_motions", "play_motion", "playback_status", "stop_motion", "close_robot_window",
+                                         "run_step_length_experiment", "get_step_length_results", "play_larger_steps", "list_physics_skills", "run_physics_motion"})
+                physical = await session.call_tool('list_physics_skills', {})
+                self.assertFalse(physical.isError)
+                if physical.structuredContent and physical.structuredContent['student_available']:
+                    trial = await session.call_tool('run_physics_motion', {'task': 'stand', 'seconds': 1})
+                    self.assertFalse(trial.isError)
+                    assert trial.structuredContent is not None
+                    self.assertEqual(trial.structuredContent['mode'], 'motor_driven_physics')
+                bad_physical = await session.call_tool('run_physics_motion', {'task': 'fly'})
+                self.assertTrue(bad_physical.isError)
                 catalog = await session.call_tool("list_motions", {})
                 self.assertFalse(catalog.isError)
                 invalid = await session.call_tool("play_motion", {"motion": "../secret"})
@@ -104,6 +142,21 @@ class CatalogTests(unittest.TestCase):
                 self.assertEqual(reopened.structuredContent["state"], "running")
                 closed = await session.call_tool("close_robot_window", {})
                 self.assertFalse(closed.isError)
+                experiment = await session.call_tool("run_step_length_experiment",
+                    {"targets": [0.20], "repetitions": 1, "max_steps": 2})
+                self.assertFalse(experiment.isError)
+                assert experiment.structuredContent is not None
+                self.assertFalse(experiment.structuredContent["target_applied_to_controller"])
+                self.assertEqual(experiment.structuredContent["visualization"]["motion"], "walk")
+                self.assertIn(experiment.structuredContent["visualization"]["state"], ("running", "completed"))
+                saved = await session.call_tool("get_step_length_results",
+                    {"experiment_id": experiment.structuredContent["experiment_id"]})
+                self.assertFalse(saved.isError)
+                data_only = await session.call_tool("run_step_length_experiment",
+                    {"targets": [0.20], "repetitions": 1, "max_steps": 2, "show_simulation": False})
+                self.assertFalse(data_only.isError)
+                assert data_only.structuredContent is not None
+                self.assertEqual(data_only.structuredContent["visualization"]["state"], "not_requested")
 
 
 if __name__ == "__main__":

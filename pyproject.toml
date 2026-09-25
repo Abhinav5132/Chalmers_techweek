@@ -28,3 +28,13 @@ extra-paths = [".venv/lib/python3.11/site-packages/cmeel.prefix/lib/python3.11/s
 
 [tool.ty.rules]
 unresolved-attribute = "ignore"
+
+[dependency-groups]
+training = [
+    "gymnasium>=1.3.0",
+    "matplotlib>=3.11.2",
+    "onnxruntime>=1.30.0",
+    "stable-baselines3>=2.9.0",
+    "tensorboard>=2.21.0",
+    "torch>=2.14.0",
+]

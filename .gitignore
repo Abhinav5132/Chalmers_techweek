@@ -222,3 +222,6 @@ data/
 .tools/
 .hermes-robot/
 .robot-runtime/
+
+# Local runtime session identifier
+:memory:.ses
