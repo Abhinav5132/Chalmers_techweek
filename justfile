@@ -143,12 +143,8 @@ chain clips="walk step_touch bow" steps="20000":
         --motion-source {{wbc_motion_dir}} --chain {{clips}} \
         --viewer none --max-steps {{steps}}
 
-# Train a WBC policy on the hackathon clip library (full/teammate schedule)
-wbc-train:
-    @cd {{wbc_dir}} && uv run wbc-mjlab-train --task Wbc-G1 --dataset hackathon
-
 # Fast train: env count + few iterations for a quick, visible result
-wbc-train-quick envs="1024" iters="3000":
+wbc-train envs="1024" iters="3000":
     @uv run python -m src.app.cli train --envs {{envs}} --iters {{iters}}
 
 # Fine-tune from the bundled checkpoint instead of scratch (much faster convergence)
@@ -158,6 +154,10 @@ wbc-finetune envs="512" iters="1000":
 # Export deploy artifacts (policy.onnx + config.yaml) into models/
 wbc-export:
     @uv run python -m src.app.cli export
+
+# Regenerate the training-identical G1 scene used by the plain-MuJoCo deploy
+wbc-export-scene:
+    @{{wbc_dir}}/.venv/bin/python -m src.controllers.export_train_scene
 
 # Play the trained policy through a chain in plain MuJoCo (main-project runtime)
 play-chain clips="walk step_touch bow":

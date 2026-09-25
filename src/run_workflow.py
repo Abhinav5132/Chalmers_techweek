@@ -44,8 +44,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scene",
         type=str,
-        default="unitree_mujoco/unitree_robots/g1/scene_29dof.xml",
-        help="Path to MuJoCo scene XML.",
+        default="models/params/robot_train/scene.xml",
+        help="Path to MuJoCo scene XML (default: exported mjlab training-identical G1 scene).",
     )
     parser.add_argument(
         "--workflow-json",

@@ -162,17 +162,6 @@ def quat_to_matrix(q: np.ndarray) -> np.ndarray:
     )
 
 
-def quat_yaw(q: np.ndarray) -> np.ndarray:
-    """Yaw-only wxyz quaternion from a full wxyz quaternion (identity if degenerate)."""
-    q = np.asarray(q, dtype=np.float64)
-    norm = np.linalg.norm(q)
-    if not np.isfinite(norm) or norm < 1e-8:
-        return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
-    w, x, y, z = q / norm
-    yaw = 2.0 * np.arctan2(z, w)
-    return np.array([np.cos(yaw / 2.0), 0.0, 0.0, np.sin(yaw / 2.0)], dtype=np.float64)
-
-
 def _rotated_vel(vel: np.ndarray, q: np.ndarray) -> np.ndarray:
     return quat_to_matrix(q) @ np.asarray(vel, dtype=np.float64)
 
@@ -213,9 +202,33 @@ class WbcPhysicsRunner:
                 )
         self.anchor_body_name: str = str(cfg["tracking"]["anchor_body_name"])
 
-        self.anchor_body_id: int = int(mj.mj_name2id(mj_model, mj.mjtObj.mjOBJ_BODY, self.anchor_body_name))
-        self.root_body_id: int = 1  # first robot body = pelvis
-        self.npz_anchor_idx: int = self.anchor_body_id - 1
+        def _body_id(name: str) -> int:
+            """Resolve a body name, tolerating the mjlab 'robot/' name prefix."""
+            bid = int(mj.mj_name2id(mj_model, mj.mjtObj.mjOBJ_BODY, name))
+            if bid < 0:
+                bid = int(mj.mj_name2id(mj_model, mj.mjtObj.mjOBJ_BODY, f"robot/{name}"))
+            if bid < 0:
+                raise RuntimeError(f"Body {name!r} not found in the MuJoCo model.")
+            return bid
+
+        self.anchor_body_id: int = _body_id(self.anchor_body_name)
+        self.root_body_id: int = _body_id("pelvis")
+        # NPZ body index N refers to the N-th robot body; pelvis is NPZ body 0.
+        self.npz_anchor_idx: int = self.anchor_body_id - self.root_body_id
+
+        # Map each actuator to its driven joint's config index. The mjlab scene
+        # orders actuators by training action groups, not by joint order, so the
+        # joint-ordered torque vector must be reordered before writing ctrl.
+        joint_id_to_cfg: dict[int, int] = {}
+        cfg_j = 0
+        for j in range(mj_model.njnt):
+            if mj_model.jnt_type[j] == mj.mjtJoint.mjJNT_FREE:
+                continue
+            joint_id_to_cfg[j] = cfg_j
+            cfg_j += 1
+        self.ctrl_idx: list[int] = [
+            joint_id_to_cfg[int(mj_model.actuator_trnid[a, 0])] for a in range(mj_model.nu)
+        ]
 
         self.substeps: int = max(1, int(round(self.policy_step_dt / float(mj_model.opt.timestep))))
 
@@ -241,26 +254,23 @@ class WbcPhysicsRunner:
         return float(self.clip.n_frames - 1) / self.clip.fps
 
     def load_clip(self, clip_path: str) -> None:
-        """Load a clip, resample to the policy rate, and anchor its frame-0 pose to the robot."""
+        """Load a clip and resample it to the policy rate.
+
+        reset_to_initial_pose() teleports the robot to the clip's frame-0 root
+        pose, so the reference plays absolute (origin = identity), exactly like
+        the training env's RSI reset.
+        """
         self.clip = ClipReference(clip_path, target_fps=1.0 / self.policy_step_dt)
         self.frame = 0
-        # Populate xpos/xquat before reading the robot pose: a fresh MjData has
-        # zeroed orientation fields, which would poison the anchor with NaNs.
-        mj.mj_forward(self.mj_model, self.mj_data)
-        ref_pos, ref_quat, _, _ = self.clip.anchor_frame(0, self.npz_anchor_idx)
-        robot_anchor_pos = np.asarray(self.mj_data.xpos[self.anchor_body_id], dtype=np.float64)
-        robot_anchor_quat = np.asarray(self.mj_data.xquat[self.anchor_body_id], dtype=np.float64)
-        yaw_robot = quat_yaw(robot_anchor_quat)
-        yaw_ref = quat_yaw(ref_quat)
-        self.clip_origin_pos = robot_anchor_pos - np.asarray(ref_pos, dtype=np.float64)
-        self.clip_origin_quat = quat_multiply(yaw_robot, quat_conjugate(yaw_ref))
+        self.clip_origin_pos[:] = 0.0
+        self.clip_origin_quat[:] = (1.0, 0.0, 0.0, 0.0)
 
     def reset_to_initial_pose(self) -> None:
         """Initialise the robot to the first frame of the active clip (RSI-style)."""
         if self.clip is None:
             raise RuntimeError("No clip loaded; call load_clip() first.")
         q0 = self.clip.joint_pos[0].copy()
-        pos, quat_wxyz, lin, ang = self.clip.anchor_frame(0, self.npz_anchor_idx)
+        pos, quat_wxyz, lin, ang = self.clip.anchor_frame(0, 0)
         self.mj_data.qpos[0:3] = np.asarray(pos, dtype=np.float64)
         self.mj_data.qpos[3:7] = quat_wxyz
         self.mj_data.qvel[0:3] = np.asarray(lin, dtype=np.float64)
@@ -349,7 +359,8 @@ class WbcPhysicsRunner:
                     peak = max(0.0, peak - (peak / max(x2 - x1, 1e-6)) * (abs_v - x1))
                 tau[j] = np.clip(tau[j], -peak, peak)
                 tau[j] -= fs * np.tanh(v[j] / max(va, 1e-6)) + fd * v[j]
-            self.mj_data.ctrl[:] = tau
+            for a, j in enumerate(self.ctrl_idx):
+                self.mj_data.ctrl[a] = tau[j]
             mj.mj_step(self.mj_model, self.mj_data)
 
         self.frame += 1
