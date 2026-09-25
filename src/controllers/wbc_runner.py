@@ -56,6 +56,7 @@ _ENVELOPE: dict[str, tuple[float, float, float, float, float, float, float, floa
     "wrist_roll": (30.86, 40.13, 24.8, 31.9, 0.6, 0.06, 0.01, 1.0),
     "wrist_pitch": (15.3, 24.76, 4.8, 8.6, 0.6, 0.06, 0.01, 1.0),
     "wrist_yaw": (15.3, 24.76, 4.8, 8.6, 0.6, 0.06, 0.01, 1.0),
+    "waist_yaw": (22.63, 35.52, 71.0, 83.3, 1.6, 0.16, 0.01, 1.0),
     "waist_pitch": (30.86, 40.13, 49.6, 63.8, 1.2, 0.12, 0.01, 2.0),
     "waist_roll": (30.86, 40.13, 49.6, 63.8, 1.2, 0.12, 0.01, 2.0),
     "ankle_pitch": (30.86, 40.13, 49.6, 63.8, 1.2, 0.12, 0.01, 2.0),
@@ -237,8 +238,17 @@ class WbcPhysicsRunner:
         self.obs_dim: int = int(session.get_inputs()[0].shape[1])
         self.obs_buf: np.ndarray = np.zeros(self.obs_dim, dtype=np.float32)
 
+        # Resolve IMU gyro sensor if present in the scene (matching mjlab's robot/imu_ang_vel)
+        sensor_id = int(mj.mj_name2id(mj_model, mj.mjtObj.mjOBJ_SENSOR, "robot/imu_ang_vel"))
+        if sensor_id < 0:
+            sensor_id = int(mj.mj_name2id(mj_model, mj.mjtObj.mjOBJ_SENSOR, "imu_ang_vel"))
+        self.imu_sensor_adr: int | None = (
+            int(mj_model.sensor_adr[sensor_id]) if sensor_id >= 0 else None
+        )
+
         self.clip: ClipReference | None = None
         self.frame: int = 0
+        self.last_action: np.ndarray = np.zeros(self.n_joints, dtype=np.float64)
         self.last_action_scaled: np.ndarray = np.zeros(self.n_joints, dtype=np.float64)
         self.clip_origin_pos: np.ndarray = np.zeros(3, dtype=np.float64)
         self.clip_origin_quat: np.ndarray = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
@@ -273,11 +283,14 @@ class WbcPhysicsRunner:
         pos, quat_wxyz, lin, ang = self.clip.anchor_frame(0, 0)
         self.mj_data.qpos[0:3] = np.asarray(pos, dtype=np.float64)
         self.mj_data.qpos[3:7] = quat_wxyz
+        rot0 = quat_to_matrix(quat_wxyz)
         self.mj_data.qvel[0:3] = np.asarray(lin, dtype=np.float64)
-        self.mj_data.qvel[3:6] = np.asarray(ang, dtype=np.float64)
+        # MuJoCo freejoint rotational velocity qvel[3:6] is in local body frame
+        self.mj_data.qvel[3:6] = rot0.T @ np.asarray(ang, dtype=np.float64)
         self.mj_data.qpos[7 : 7 + self.n_joints] = q0
         self.mj_data.qvel[6 : 6 + self.n_joints] = 0.0
         self.frame = 0
+        self.last_action[:] = 0.0
         self.last_action_scaled[:] = 0.0
         mj.mj_forward(self.mj_model, self.mj_data)
 
@@ -300,19 +313,27 @@ class WbcPhysicsRunner:
 
     def _robot_obs(self) -> dict[str, np.ndarray]:
         d = self.mj_data
-        root_pos = np.asarray(d.xpos[self.root_body_id], dtype=np.float64)
         root_quat = np.asarray(d.xquat[self.root_body_id], dtype=np.float64)
         rot = quat_to_matrix(root_quat)
-        vel = np.zeros(6, dtype=np.float64)
-        mj.mj_objectVelocity(self.mj_model, d, mj.mjtObj.mjOBJ_BODY, self.root_body_id, vel, 1)
+
+        if self.imu_sensor_adr is not None:
+            base_ang_vel = np.asarray(
+                d.sensordata[self.imu_sensor_adr : self.imu_sensor_adr + 3], dtype=np.float64
+            )
+        else:
+            # mj_objectVelocity computes (rot:lin) 6D velocity; flg=0 gives local body frame
+            vel = np.zeros(6, dtype=np.float64)
+            mj.mj_objectVelocity(self.mj_model, d, mj.mjtObj.mjOBJ_BODY, self.root_body_id, vel, 0)
+            base_ang_vel = vel[0:3]
+
         q = np.asarray(d.qpos[7 : 7 + self.n_joints], dtype=np.float64)
         v = np.asarray(d.qvel[6 : 6 + self.n_joints], dtype=np.float64)
         return {
-            "base_ang_vel": vel[3:6],
+            "base_ang_vel": base_ang_vel,
             "projected_gravity": rot.T @ np.array([0.0, 0.0, -1.0]),
             "joint_pos": q - self.default_joint_pos,
             "joint_vel": v,
-            "actions": self.last_action_scaled,
+            "actions": self.last_action,
         }
 
     def build_obs(self) -> np.ndarray:
@@ -333,6 +354,7 @@ class WbcPhysicsRunner:
         obs = self.build_obs()
         action = self.onnx_session.run(None, {self.onnx_session.get_inputs()[0].name: obs[None, :]})[0][0]
         action = np.asarray(action, dtype=np.float64)
+        self.last_action = action.copy()
         self.last_action_scaled = self.action_scale * action
         return self.last_action_scaled
 

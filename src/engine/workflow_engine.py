@@ -75,18 +75,23 @@ class MotionClipNode(WorkflowNode):
     """
     Skill Node that tracks an RL-tracked animation clip in MuJoCo physics via the
     exported WBC policy. Plays the clip once (no loop); duration defaults to the
-    clip length.
+    clip length plus any requested delay_after.
     """
 
     def __init__(
         self,
         clip_name: str,
         duration: float | None = None,
+        delay_after: float = 0.0,
+        speed: float = 1.0,
         name: str | None = None,
     ) -> None:
         node_name = name or f"TrackClip_{clip_name}"
         super().__init__(node_name, duration if duration is not None else 0.01)
         self.clip_name: str = clip_name
+        self.delay_after: float = max(0.0, delay_after)
+        self.speed: float = max(0.1, speed)
+        self.clip_duration: float = self.duration
         self.clip_path: str = self._resolve_clip_path(clip_name)
 
     @staticmethod
@@ -105,15 +110,22 @@ class MotionClipNode(WorkflowNode):
             context.wbc_runner.load_clip(self.clip_path)
             context.wbc_runner.reset_to_initial_pose()
             clip_dur = context.wbc_runner.clip_duration()
-            if self.duration < 0.01 or clip_dur is not None:
-                self.duration = clip_dur if clip_dur is not None else self.duration
-            print(f"[Workflow] Started Motion Clip: '{self.clip_name}' ({self.duration:.1f}s)")
+            if clip_dur is not None:
+                self.clip_duration = clip_dur / self.speed
+            self.duration = self.clip_duration + self.delay_after
+            print(f"[Workflow] Started Motion Clip: '{self.clip_name}' ({self.clip_duration:.1f}s + {self.delay_after:.1f}s delay)")
         else:
             raise FileNotFoundError(f"Motion clip file not found: {self.clip_path}")
 
     def update(self, context: WorkflowContext, dt: float) -> bool:
         self.elapsed += dt
-        context.wbc_runner.step_policy()
+        if self.elapsed <= self.clip_duration:
+            context.wbc_runner.step_policy()
+        else:
+            # Transition/Delay phase: hold balance stance
+            torques = context.pink_ctrl.compute_pd_torques(context.pink_ctrl.q_nominal_29)
+            context.mj_data.ctrl[:] = torques
+            mj.mj_step(context.mj_model, context.mj_data)
         return self.elapsed >= self.duration
 
     def on_exit(self, context: WorkflowContext) -> None:
@@ -124,7 +136,9 @@ class MotionClipNode(WorkflowNode):
             "type": "motion_clip",
             "name": self.name,
             "clip_name": self.clip_name,
-            "duration": self.duration,
+            "duration": self.clip_duration,
+            "delay_after": self.delay_after,
+            "speed": self.speed,
             "loop": False,
         }
 
@@ -214,12 +228,44 @@ class StandHoldNode(WorkflowNode):
         mj.mj_step(context.mj_model, context.mj_data)
         return self.elapsed >= self.duration
 
+
     def on_exit(self, context: WorkflowContext) -> None:
         print(f"[Workflow] Completed Stand Hold")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "type": "stand_hold",
+            "name": self.name,
+            "duration": self.duration,
+        }
+
+
+class DelayNode(WorkflowNode):
+    """
+    Skill Node that pauses execution for a specified duration while holding
+    stable nominal standing balance (time between clips).
+    """
+
+    def __init__(self, duration: float = 1.0, name: str = "Delay") -> None:
+        super().__init__(name, duration)
+
+    def on_enter(self, context: WorkflowContext) -> None:
+        self.elapsed = 0.0
+        print(f"[Workflow] Started Delay ({self.duration:.1f}s)")
+
+    def update(self, context: WorkflowContext, dt: float) -> bool:
+        self.elapsed += dt
+        torques = context.pink_ctrl.compute_pd_torques(context.pink_ctrl.q_nominal_29)
+        context.mj_data.ctrl[:] = torques
+        mj.mj_step(context.mj_model, context.mj_data)
+        return self.elapsed >= self.duration
+
+    def on_exit(self, context: WorkflowContext) -> None:
+        print(f"[Workflow] Completed Delay ({self.duration:.1f}s)")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": "delay",
             "name": self.name,
             "duration": self.duration,
         }
@@ -300,7 +346,16 @@ class WorkflowEngine:
                     MotionClipNode(
                         clip_name=item["clip_name"],
                         duration=item.get("duration"),
+                        delay_after=item.get("delay_after", 0.0),
+                        speed=item.get("speed", 1.0),
                         name=item.get("name"),
+                    )
+                )
+            elif node_type == "delay":
+                self.add_node(
+                    DelayNode(
+                        duration=item.get("duration", 1.0),
+                        name=item.get("name", "Delay"),
                     )
                 )
             elif node_type == "pink_reach":

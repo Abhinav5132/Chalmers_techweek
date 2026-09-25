@@ -129,7 +129,8 @@ def export_deploy_artifacts(
     write_motion_library=True,
   )
   for f in params_dir.glob("*"):
-    shutil.copy2(f, out_dir / f.name)
+    if f.is_file():
+      shutil.copy2(f, out_dir / f.name)
   print(f"[chain] Deploy artifacts written to {out_dir.resolve()}")
 
 

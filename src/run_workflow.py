@@ -115,6 +115,13 @@ def main() -> None:
     if has_display:
         print("\nLaunching interactive viewer. Close window to exit.")
         with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+            try:
+                sim = viewer._get_sim()
+                sim.ui0_enable = False
+                sim.ui1_enable = False
+                sim.clear_texts()
+            except Exception:
+                pass
             while viewer.is_running() and not engine.is_finished:
                 step_start = time.time()
                 engine.step(dt=policy_dt)
@@ -127,7 +134,7 @@ def main() -> None:
         step_i = 0
         while not engine.is_finished and step_i < args.max_steps:
             engine.step(dt=policy_dt)
-            if step_i % 1000 == 0:
+            if step_i % 100 == 0:
                 name = engine.current_node.name if engine.current_node else "Done"
                 pos = mj_data.qpos[0:3]
                 print(
