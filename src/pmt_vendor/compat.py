@@ -72,5 +72,3 @@ def build_obs_schema(obs: TensorDict, obs_groups: dict[str, list[str]] | None = 
     payload = json.dumps(schema, sort_keys=True, separators=(",", ":"))
     schema["hash"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return schema
-
-
