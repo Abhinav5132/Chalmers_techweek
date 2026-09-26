@@ -12,7 +12,12 @@ import sys
 import time
 import json
 import argparse
+from pathlib import Path
 from typing import Any
+
+if os.environ.get("__GLX_VENDOR_LIBRARY_NAME") == "nvidia":
+    os.environ.pop("__GLX_VENDOR_LIBRARY_NAME", None)
+
 import numpy as np
 import mujoco
 
@@ -63,6 +68,48 @@ def parse_args() -> argparse.Namespace:
         default=1.0,
         help="Playback speed multiplier (default: 1.0).",
     )
+    ui_group = parser.add_mutually_exclusive_group()
+    ui_group.add_argument(
+        "--show-ui",
+        dest="show_ui",
+        action="store_true",
+        default=True,
+        help="Show MuJoCo viewer UI panels and sidebars (default).",
+    )
+    ui_group.add_argument(
+        "--hide-ui",
+        dest="show_ui",
+        action="store_false",
+        help="Hide MuJoCo viewer UI panels/sidebars for a stripped, clean view.",
+    )
+    vsync_group = parser.add_mutually_exclusive_group()
+    vsync_group.add_argument(
+        "--no-vsync",
+        dest="no_vsync",
+        action="store_true",
+        default=True,
+        help="Disable VSync in the MuJoCo viewer for maximum/uncapped framerate (default).",
+    )
+    vsync_group.add_argument(
+        "--vsync",
+        dest="no_vsync",
+        action="store_false",
+        help="Enable VSync in the MuJoCo viewer.",
+    )
+    follow_group = parser.add_mutually_exclusive_group()
+    follow_group.add_argument(
+        "--follow",
+        dest="follow",
+        action="store_true",
+        default=True,
+        help="Camera automatically follows the robot (default).",
+    )
+    follow_group.add_argument(
+        "--no-follow",
+        dest="follow",
+        action="store_false",
+        help="Keep camera static at initial origin.",
+    )
     parser.add_argument(
         "--headless",
         action="store_true",
@@ -90,7 +137,7 @@ def load_motion_clip(path: str) -> dict[str, np.ndarray]:
     if not os.path.exists(resolved):
         raise FileNotFoundError(f"Motion clip not found at '{resolved}'.")
 
-    data = np.load(resolved)
+    data = np.load(resolved, allow_pickle=True)
     required_keys = ["fps", "joint_pos", "body_pos_w", "body_quat_w"]
     for k in required_keys:
         if k not in data:
@@ -106,6 +153,27 @@ def load_motion_clip(path: str) -> dict[str, np.ndarray]:
 
 def main() -> None:
     args: argparse.Namespace = parse_args()
+
+    if args.no_vsync:
+        os.environ["__GL_SYNC_TO_VBLANK"] = "0"
+        os.environ["vblank_mode"] = "0"
+        hook_path = Path(__file__).resolve().parent / "gui" / "libnovsync.so"
+        c_src = Path(__file__).resolve().parent / "gui" / "novsync.c"
+        if not hook_path.exists() and c_src.exists():
+            try:
+                import subprocess
+                subprocess.run(
+                    ["gcc", "-shared", "-fPIC", "-O2", "-o", str(hook_path), str(c_src), "-ldl"],
+                    check=False,
+                )
+            except Exception:
+                pass
+        if hook_path.exists() and str(hook_path) not in os.environ.get("LD_PRELOAD", ""):
+            cur_preload = os.environ.get("LD_PRELOAD", "")
+            os.environ["LD_PRELOAD"] = f"{hook_path}:{cur_preload}" if cur_preload else str(hook_path)
+            if not os.environ.get("_NO_VSYNC_REEXEC"):
+                os.environ["_NO_VSYNC_REEXEC"] = "1"
+                os.execv(sys.executable, [sys.executable] + sys.argv)
 
     scene_path: str = "unitree_mujoco/unitree_robots/g1/scene_29dof.xml"
     if not os.path.exists(scene_path):
@@ -167,16 +235,35 @@ def main() -> None:
     )
 
     if has_display:
-        print("\nLaunching clean 3D simulation player...")
-        with mj.viewer.launch_passive(mj_model, mj_data) as viewer:
-            # Strip all sidebars, debug panels, and text overlays
-            try:
-                sim = viewer._get_sim()
-                sim.ui0_enable = False
-                sim.ui1_enable = False
-                sim.clear_texts()
-            except Exception:
-                pass
+        mode_str = f"UI: {'Shown' if args.show_ui else 'Stripped'}, VSync: {'Off' if args.no_vsync else 'On'}, Follow: {'On' if args.follow else 'Off'}"
+        print(f"\nLaunching 3D simulation player ({mode_str})...")
+        with mj.viewer.launch_passive(
+            mj_model,
+            mj_data,
+            show_left_ui=args.show_ui,
+            show_right_ui=args.show_ui,
+        ) as viewer:
+            # Set camera to follow robot if requested
+            if args.follow:
+                try:
+                    pelvis_id = mj_model.body("pelvis").id
+                    viewer.cam.type = mj.mjtCamera.mjCAMERA_TRACKING
+                    viewer.cam.trackbodyid = pelvis_id
+                    viewer.cam.distance = 3.0
+                    viewer.cam.elevation = -12.0
+                    viewer.cam.azimuth = 90.0
+                except Exception:
+                    pass
+
+            # Strip all sidebars, debug panels, and text overlays if not requested
+            if not args.show_ui:
+                try:
+                    sim = viewer._get_sim()
+                    sim.ui0_enable = False
+                    sim.ui1_enable = False
+                    sim.clear_texts()
+                except Exception:
+                    pass
 
             while viewer.is_running():
                 for item_idx, it in enumerate(items):
@@ -208,6 +295,11 @@ def main() -> None:
                             mj_data.qpos[7 : 7 + n_j] = jpos[k, :n_j]
 
                             mj.mj_forward(mj_model, mj_data)
+
+                            # If camera was switched to free mode, keep lookat centered on robot
+                            if args.follow and viewer.cam.type == mj.mjtCamera.mjCAMERA_FREE:
+                                viewer.cam.lookat[0:3] = bpos[k, 0, :]
+
                             viewer.sync()
 
                             elapsed = time.time() - step_start

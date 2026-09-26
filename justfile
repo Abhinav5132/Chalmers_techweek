@@ -9,9 +9,9 @@ default_scene := "unitree_mujoco/unitree_robots/g1/scene_29dof.xml"
 # Start MuJoCo simulation viewer with a specified scene (default: G1 29-DoF scene)
 sim scene=default_scene:
     @if command -v uv >/dev/null 2>&1; then \
-        uv run python -m mujoco.viewer --mjcf="{{scene}}"; \
+        env -u __GLX_VENDOR_LIBRARY_NAME uv run python -m mujoco.viewer --mjcf="{{scene}}"; \
     else \
-        python -m mujoco.viewer --mjcf="{{scene}}"; \
+        env -u __GLX_VENDOR_LIBRARY_NAME python -m mujoco.viewer --mjcf="{{scene}}"; \
     fi
 
 # Start simulation with 23-DoF G1 scene
@@ -122,10 +122,12 @@ stand:
 # Replay a MoCap clip (.npz) on the G1 in MuJoCo
 play clip="data/motions/walk.npz":
     @if command -v uv >/dev/null 2>&1; then \
-        uv run python src/play_motion.py --clip "{{clip}}" --loop; \
+        env -u __GLX_VENDOR_LIBRARY_NAME uv run python src/play_motion.py --clip "{{clip}}" --loop; \
     else \
-        python src/play_motion.py --clip "{{clip}}" --loop; \
+        env -u __GLX_VENDOR_LIBRARY_NAME python src/play_motion.py --clip "{{clip}}" --loop; \
     fi
+
+alias play-clip := play
 
 
 # === wbc-mjlab RL tracking stack (separate env in third_party/wbc-mjlab) ===
@@ -138,10 +140,10 @@ wbc-setup:
     @uv run python -m src.app.cli setup
 
 # Run the chained clip sequence with the trained policy (headless metrics, wbc-native)
-chain clips="walk step_touch bow" steps="20000":
+chain clips="walk_lafan step_touch bow" steps="20000":
     @cd {{wbc_dir}} && uv run python -m wbc_mjlab.scripts.chain \
         --motion-source {{wbc_motion_dir}} --chain {{clips}} \
-        --viewer none --max-steps {{steps}}
+        --max-steps {{steps}}
 
 # Fast train: env count + few iterations for a quick, visible result
 wbc-train envs="1024" iters="3000":
@@ -161,11 +163,11 @@ wbc-export-scene:
 
 # Play the trained policy through a chain in plain MuJoCo (main-project runtime)
 play-chain clips="walk step_touch bow":
-    @uv run python -m src.app.cli play --chain {{clips}}
+    @env -u __GLX_VENDOR_LIBRARY_NAME uv run python -m src.app.cli play --chain {{clips}}
 
 # Launch the DearPyGui desktop window (preview / chain / train / play)
 gui:
-    @uv run python -m src.gui.main
+    @env -u __GLX_VENDOR_LIBRARY_NAME uv run python -m src.gui.main
 
 # Run static type checking with ty
 check:
