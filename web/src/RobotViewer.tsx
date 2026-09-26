@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { Focus, Move3D } from "lucide-react";
+import { Focus, Move3D, Maximize, Minimize } from "lucide-react";
 import type { Playback, RobotModel } from "./shared";
 
 export default function RobotViewer({
@@ -12,6 +12,30 @@ export default function RobotViewer({
   playback: Playback | null;
 }) {
   const mount = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const change = () => setFullscreen(document.fullscreenElement === stage.current);
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !document.fullscreenElement) setFullscreen(false);
+    };
+    document.addEventListener("fullscreenchange", change);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("fullscreenchange", change);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
+  async function toggleFullscreen() {
+    if (fullscreen) {
+      if (document.fullscreenElement === stage.current) await document.exitFullscreen();
+      setFullscreen(false);
+    } else {
+      setFullscreen(true);
+      try { await stage.current?.requestFullscreen?.(); }
+      catch { /* Keep the expanded viewport when native fullscreen is unavailable. */ }
+    }
+  }
   const pose = useRef(playback);
   const recenter = useRef<() => void>(() => {});
   const [error, setError] = useState("");
@@ -208,7 +232,7 @@ export default function RobotViewer({
     };
   }, [model]);
   return (
-    <div className="viewer-stage">
+    <div ref={stage} className={`viewer-stage ${fullscreen ? "viewer-fullscreen" : ""}`}>
       <div
         ref={mount}
         className="viewer-canvas"
@@ -237,6 +261,14 @@ export default function RobotViewer({
         <span>
           29 DOF <i /> Z UP <i /> METRES
         </span>
+        <button
+          className="icon-button"
+          onClick={() => void toggleFullscreen()}
+          aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          title={fullscreen ? "Exit fullscreen (Esc)" : "Enter fullscreen"}
+        >
+          {fullscreen ? <Minimize size={17} /> : <Maximize size={17} />}
+        </button>
         <button
           className="icon-button"
           onClick={() => recenter.current()}

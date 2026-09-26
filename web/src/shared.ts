@@ -8,6 +8,7 @@ export const entrySchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/),
   speed: z.number().min(0.25).max(2),
   repeats: z.number().int().min(1).max(20),
+  delay_after: z.number().min(0).max(10).optional(),
 });
 export const routineSchema = z
   .object({
@@ -46,6 +47,8 @@ export type Catalog = {
   };
 };
 export type Playback = {
+  phase?: "clip" | "transition_hold";
+  transition_remaining?: number;
   state:
     | "idle"
     | "running"

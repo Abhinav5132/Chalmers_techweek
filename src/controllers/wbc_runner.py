@@ -316,7 +316,19 @@ class WbcPhysicsRunner:
         and heading (yaw) to the robot's current pelvis pose in MuJoCo, so the clip continues
         seamlessly from where the robot currently is without resetting its position.
         """
-        self.clip = ClipReference(clip_path, target_fps=1.0 / self.policy_step_dt, speed=speed)
+        self.set_clip(
+            ClipReference(clip_path, target_fps=1.0 / self.policy_step_dt, speed=speed),
+            anchor_to_current=anchor_to_current,
+        )
+
+    def set_clip(self, clip: ClipReference, *, anchor_to_current: bool = False) -> None:
+        """Activate a preloaded reference without changing the simulated state.
+
+        Anchored switches preserve velocities, contacts, simulation time and policy
+        action history, as in the phase-2 workflow engine's non-initial clips.
+        """
+        self.clip = clip
+        self.holding = False
         self.frame = 0
 
         ref_pos, ref_quat, _, _ = self.clip.anchor_frame(0, self.npz_anchor_idx)
@@ -363,6 +375,8 @@ class WbcPhysicsRunner:
         i = min(self.frame, self.clip.n_frames - 1)
         pos, quat_wxyz, lin, ang = self.clip.anchor_frame(i, self.npz_anchor_idx)
         pos = np.asarray(pos, dtype=np.float64)
+        if getattr(self, "holding", False):
+            lin, ang = np.zeros(3), np.zeros(3)
 
         if np.all(self.clip_origin_pos == 0.0) and np.array_equal(self.clip_origin_quat, [1.0, 0.0, 0.0, 0.0]):
             ref_pos = pos
@@ -445,10 +459,13 @@ class WbcPhysicsRunner:
         self.last_action_scaled = self.action_scale * action
         return self.last_action_scaled
 
-    def step_policy(self) -> np.ndarray:
+    def step_policy(self, *, hold: bool = False) -> np.ndarray:
         """One policy period: residual PD torque applied across `substeps` sim steps."""
         if self.clip is None:
             raise RuntimeError("No clip loaded; call load_clip() first.")
+        self.holding = hold
+        if hold:
+            self.frame = self.clip.n_frames - 1
         scaled_action = self.compute_action()
         i = min(self.frame, self.clip.n_frames - 1)
         q_ref = self.clip.joint_pos[i]
@@ -473,5 +490,6 @@ class WbcPhysicsRunner:
             mj.mj_step(self.mj_model, self.mj_data)
 
         mj.mj_forward(self.mj_model, self.mj_data)
-        self.frame += 1
+        if not hold:
+            self.frame += 1
         return q_cmd

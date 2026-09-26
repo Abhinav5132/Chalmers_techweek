@@ -17,10 +17,11 @@ npm --prefix web run dev
 
 Open **http://127.0.0.1:5173**. If the library is empty, run
 `just download-motions` and refresh it. See [web/README.md](web/README.md) for
-controls, production serving, and architecture. **Play** previews recordings;
-**Run with physics** tracks the arranged routine through the phase-2 ONNX controller
+controls, production serving, and architecture. **Play**, library **Preview**, and
+**Run with physics** track the arranged routine through the phase-2 ONNX controller
 and its matching MuJoCo scene. Physics lab shows tracking error and detected falls.
-Clip/repeat boundaries reset the robot; smooth physical transitions are not implemented.
+Clip changes, repeats, and loop boundaries preserve the robot’s physical state.
+Only starting a new routine resets the robot; abrupt reference changes can affect balance.
 
 
 ## Robot commands through Hermes and MCP

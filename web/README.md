@@ -40,10 +40,22 @@ Hono terminates its Python worker. Long-running looped routines continue until s
 - Add clips with **+** or drag them from the library onto the timeline.
 - Drag timeline clips to reorder them. **Earlier/Later** also work with keyboard/touch.
 - Select a clip to change speed (0.25–2×), repeats (1–20), duplicate, or remove it.
-- **Play**, **Pause/Resume**, **Stop**, **Reset**, and scrub the playback position.
-  Seeking pauses at the selected time. Pause playback to edit a routine; the first
+- **Play** runs the routine with WBC physics; library **Preview** runs one clip with
+  the same physics controller. **Pause/Resume**, **Stop**, and **Reset** control playback.
+  Seeking is disabled for physics. Pause playback to edit a routine; the first
   edit stops the paused run, and Play starts the updated sequence from the beginning.
-  Running playback shows a **Pause to edit** button. Camera orbit/zoom remains available.
+  Running playback shows a **Pause to edit** button. The trash button on each timeline
+  clip also works during playback: it stops the run before removing that instance.
+  Camera orbit/zoom remains available. Use **Enter fullscreen** in the viewer to expand
+  it, then **Exit fullscreen** or Escape to return.
+- **Transition delay** in the selected clip inspector sets a 0–10 second hold after
+  each play of that clip, including repeats and loop boundaries. Zero switches
+  immediately. The final clip of a non-looping routine has no trailing hold.
+  The value is saved/exported as `delay_after`; older routines default to zero.
+  This follows the phase-2 branch’s delay-after concept, not pose blending: the
+  WBC tracks the final pose with zero reference base velocity while MuJoCo keeps
+  stepping. A long hold on an unstable pose can still fall. Delays count toward
+  the routine duration and are quantized to the 20 ms controller period.
 - **Loop** repeats the full routine. Individual repeats are separate.
 - **Save routine** persists it under `.robot-runtime/web-routines/`. **Open** loads
   saved routines or creates a new one. **Export/Import JSON** transfers routines.
@@ -59,16 +71,19 @@ Hono terminates its Python worker. Long-running looped routines continue until s
   clip segments, detected falls and the failure reason. Expand **Separate stand / walk
   trials** for the older teacher/student controllers when their separate assets exist.
 
-Recording playback directly sets poses. It is **not a physics-balanced dance**.
-Clip boundaries reset to the next recording's root pose; no transition blending is
-implemented. The browser interpolates displayed poses for smoother rendering only.
+The backend retains a recording-only playback API, but all UI Play/Preview actions
+use physics.
+Clip changes preserve position, orientation, velocity and controller history. The browser interpolates displayed poses for smoother rendering only.
 The waveform graphics are decorative clip markers, not measured audio or motion data.
 
 The phase-2 tracking runtime, exported policy and matching training scene are now
-integrated on `main`. See [models/README.md](../models/README.md) for their source.
-Within a physics segment, only motor torques and MuJoCo dynamics move the robot.
-Each clip/repeat begins with a reference-pose reset, as in the phase-2 branch.
-There is no blending or balance-preserving transition between segments.
+integrated in the web studio. See [models/README.md](../models/README.md) for their source.
+Only starting a new routine resets to its first reference pose. Clip changes,
+repeats and full-routine loops reuse the phase-2 workflow engine’s anchored
+transition: the new reference is aligned to the current heading and horizontal
+position while physical state, simulation time and policy history continue.
+Motor torques and MuJoCo dynamics move the robot through each boundary.
+Reference targets switch directly; arbitrary clip combinations can still lose balance.
 
 The controller was trained on these recordings, not every possible tempo or new
 clip. Retiming adjusts reference velocities, not the physical timestep, and can
@@ -95,10 +110,14 @@ checkpoints do not prevent the bundled WBC policy from tracking a routine.
 `POST /api/run` accepts the routine plus `mode: "kinematic_playback"` (default) or
 `mode: "wbc_tracking"`. `GET /api/model?scene=g1|wbc` supplies the matching geometry;
 status includes `model_id` to prevent rendering physics poses against the wrong model.
-Missing assets or incompatible clips fail explicitly; recording preview stays available.
+Missing assets or incompatible clips disable the corresponding Play/Preview actions;
+the UI does not fall back to recording playback.
 
-The frontend fetches status sequentially approximately 14 times/second, slowing down
-on disconnect. Geometry is loaded once and compressed over HTTP. No browser request
+The frontend targets 60 status updates/second, accounting for request time and
+keeping only one request in flight. Slow responses or browser throttling reduce
+the rate; disconnects back off to 1.5 seconds between attempts. This does not change
+the WBC policy's 50 Hz control rate or MuJoCo's physics timestep.
+Geometry is loaded once and compressed over HTTP. No browser request
 is executed as a shell command; commands, clip IDs, speeds, repeats, and file IDs are
 validated. Failed commands are displayed in the UI.
 

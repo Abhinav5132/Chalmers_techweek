@@ -58,7 +58,7 @@ class TrackingTests(unittest.TestCase):
         mujoco.mj_forward(runtime.model, runtime.data)
         np.testing.assert_allclose(runtime.runner._robot_obs()['base_ang_vel'], [.1, .2, .3], atol=1e-6)
 
-    def test_policy_history_uses_raw_actions_and_resets_between_clips(self):
+    def test_policy_history_uses_raw_actions_and_clears_on_explicit_reset(self):
         self.run_tracking()
         runner = self.studio.tracking.runner
         scaled = runner.compute_action()
@@ -94,8 +94,72 @@ class TrackingTests(unittest.TestCase):
         self.assertEqual(visited, [('one', 1), ('one', 2), ('two', 1), ('three', 1)])
         self.assertEqual(s.state['state'], 'completed')
         self.assertEqual(s.state['completed_clips'], 4)
-        self.assertEqual(s.state['reset_count'], 4)
+        self.assertEqual(s.state['reset_count'], 1)
         self.assertAlmostEqual(s.state['elapsed'], s.state['total'])
+
+    def test_clip_switch_preserves_pose_velocity_time_and_action_history(self):
+        self.run_tracking([self.entry(), self.entry('b', id='two')])
+        runtime = self.studio.tracking
+        assert runtime is not None
+        runtime.step()
+        # A displaced, rotated robot must not return to the recording origin.
+        runtime.data.qpos[:2] = [3., -2.]
+        runtime.data.qpos[3:7] = [2 ** -.5, 0, 0, 2 ** -.5]
+        mujoco.mj_forward(runtime.model, runtime.data)
+        pose, velocity = runtime.data.qpos.copy(), runtime.data.qvel.copy()
+        previous_action = runtime.runner.last_action.copy()
+        sim_time = runtime.data.time
+        runtime.index = 1
+        runtime._enter()
+        np.testing.assert_array_equal(runtime.data.qpos, pose)
+        np.testing.assert_array_equal(runtime.data.qvel, velocity)
+        np.testing.assert_array_equal(runtime.runner.last_action, previous_action)
+        self.assertEqual(runtime.data.time, sim_time)
+        np.testing.assert_allclose(runtime.runner.clip_origin_pos[:2], [3., -2.])
+        from controllers.wbc_runner import quat_multiply, quat_yaw
+        ref_quat = runtime.runner.clip.anchor_frame(0, runtime.runner.npz_anchor_idx)[1]
+        anchored = quat_yaw(quat_multiply(runtime.runner.clip_origin_quat, ref_quat))
+        np.testing.assert_allclose(anchored, pose[3:7], atol=1e-7)
+        self.assertEqual(runtime.state['reset_count'], 1)
+        runtime.step()
+        self.assertAlmostEqual(runtime.data.time, sim_time + runtime.dt)
+        self.assertLess(np.linalg.norm(runtime.data.qpos[:3] - pose[:3]), .1)
+
+    def test_transition_delay_advances_physics_and_counts_repeats_and_loop_gaps(self):
+        entry = {**self.entry(repeats=2), 'delay_after': .1}
+        self.run_tracking([entry])
+        runtime = self.studio.tracking
+        assert runtime is not None
+        self.assertAlmostEqual(runtime.state['total'], .22)  # 2 x .06 + one .10 gap
+        for _ in range(3): runtime.step()
+        self.assertEqual(runtime.state['completed_clips'], 1)
+        pose = runtime.data.qpos.copy()
+        for _ in range(5):
+            runtime.step()
+            self.assertEqual(runtime.state['phase'], 'transition_hold')
+            self.assertEqual(runtime.state['repeat_index'], 1)
+        self.assertAlmostEqual(runtime.data.time, .16)
+        self.assertFalse(np.array_equal(runtime.data.qpos, pose))
+        self.assertEqual(runtime.state['reset_count'], 1)
+        np.testing.assert_array_equal(runtime.runner._reference()['ref_base_lin_vel_b'], np.zeros(3))
+        runtime.step()
+        self.assertEqual(runtime.state['repeat_index'], 2)
+        for _ in range(2): runtime.step()
+        self.assertEqual(runtime.state['state'], 'completed')
+        self.assertAlmostEqual(runtime.state['elapsed'], .22)
+        self.run_tracking([entry], loop=True)
+        self.assertAlmostEqual(runtime.state['total'], .32)
+        for _ in range(17): runtime.step()
+        self.assertEqual(runtime.state['cycle'], 2)
+        self.assertEqual(runtime.state['reset_count'], 1)
+
+    def test_transition_delay_validation_preserves_active_run(self):
+        self.run_tracking()
+        state = self.studio.state.copy()
+        for invalid in (-1, 11, float('nan'), True):
+            with self.assertRaisesRegex(ValueError, 'Transition delay'):
+                self.run_tracking([{**self.entry(), 'delay_after': invalid}])
+            self.assertEqual(self.studio.state, state)
 
     def test_pause_resume_stop_loop_and_switch_back(self):
         self.run_tracking(loop=True)
@@ -110,6 +174,8 @@ class TrackingTests(unittest.TestCase):
         s.command('resume', {})
         for _ in range(12): s.tick(.02)
         self.assertGreater(s.state['cycle'], 1)
+        self.assertEqual(s.state['reset_count'], 1)
+        self.assertAlmostEqual(s.tracking.data.time, s.state['simulation_seconds'])
         s.command('stop', {})
         steps = s.state['control_steps']
         s.tick(2)

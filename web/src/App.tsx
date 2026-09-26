@@ -136,7 +136,8 @@ export default function App() {
   const duration = (entry: Entry) =>
     ((motionMap.get(entry.motion)?.duration_seconds || 0) / entry.speed) *
     entry.repeats;
-  const total = routine.entries.reduce((sum, e) => sum + duration(e), 0);
+  const total = routine.entries.reduce((sum, e, i) => sum + duration(e) +
+    (e.delay_after || 0) * (e.repeats - (!routine.loop && i === routine.entries.length - 1 ? 1 : 0)), 0);
   const available = routine.entries.every((e) => motionMap.has(e.motion));
   const color = (id: string) =>
     colors[
@@ -212,7 +213,8 @@ export default function App() {
     let cancelled = false,
       timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      let delay = 70;
+      const started = performance.now();
+      let retryDelay = 0;
       try {
         const result = await api<Playback>("status");
         if (!cancelled) {
@@ -221,9 +223,15 @@ export default function App() {
         }
       } catch {
         if (!cancelled) setConnected(false);
-        delay = 1500;
+        retryDelay = 1500;
       }
-      if (!cancelled) timer = setTimeout(poll, delay);
+      // Target 60 Hz including request time, with at most one request in flight.
+      // Slow responses lower the update rate instead of accumulating requests.
+      if (!cancelled)
+        timer = setTimeout(
+          poll,
+          retryDelay || Math.max(0, 1000 / 60 - (performance.now() - started)),
+        );
     };
     void poll();
     return () => {
@@ -291,7 +299,7 @@ export default function App() {
   }
   const command = (name: string, body: unknown = {}) =>
     action(async () => setPlayback(await api<Playback>(name, body)));
-  const run = () => startRoutine("kinematic_playback");
+  const run = () => startRoutine("wbc_tracking");
   function startRoutine(mode: "kinematic_playback" | "wbc_tracking") {
     if (mode === "wbc_tracking") setTab("physics");
     return action(async () => {
@@ -315,13 +323,14 @@ export default function App() {
   function editRoutine(
     update: (routine: Routine) => Routine,
     after?: () => void,
+    allowRunning = false,
   ) {
-    if (locked) return;
+    if (busy || (locked && !allowRunning)) return;
     const apply = () => {
       setRoutine(update);
       after?.();
     };
-    if (playback?.state === "paused") {
+    if (playback?.state === "paused" || playback?.state === "running") {
       void action(async () => {
         setPlayback(await api<Playback>("stop", {}));
         apply();
@@ -392,10 +401,12 @@ export default function App() {
       () => setSelected(entry.id),
     );
   }
-  function remove() {
+  function remove(id = selected) {
+    if (!id) return;
     editRoutine(
-      (r) => ({ ...r, entries: r.entries.filter((e) => e.id !== selected) }),
-      () => setSelected(undefined),
+      (r) => ({ ...r, entries: r.entries.filter((e) => e.id !== id) }),
+      () => setSelected((current) => current === id ? undefined : current),
+      true,
     );
   }
   function startDrag(event: DragEvent, kind: "motion" | "entry", id: string) {
@@ -437,13 +448,17 @@ export default function App() {
     }
   }
   function preview(motion: Motion) {
-    if (locked) return;
-    void command("run", {
-      name: "Clip preview",
-      entries: [
-        { id: crypto.randomUUID(), motion: motion.id, speed: 1, repeats: 1 },
-      ],
-      loop: false,
+    if (locked || !catalog?.tracking?.available || !motion.tracking_available) return;
+    void action(async () => {
+      const robot = await loadModel("wbc");
+      const result = await api<Playback>("run", {
+        name: "Clip preview",
+        entries: [{ id: crypto.randomUUID(), motion: motion.id, speed: 1, repeats: 1 }],
+        loop: false,
+        mode: "wbc_tracking",
+      });
+      setModel(robot);
+      setPlayback(result);
     });
   }
   function saveRoutine() {
@@ -670,7 +685,7 @@ export default function App() {
                     </span>
                     <button
                       onClick={() => preview(motion)}
-                      disabled={locked}
+                      disabled={locked || !connected || !catalog?.tracking?.available || !motion.tracking_available}
                       aria-label={`Preview ${title(motion.id)}`}
                     >
                       <Play size={11} fill="currentColor" /> Preview
@@ -761,13 +776,13 @@ export default function App() {
                   busy ||
                   !connected ||
                   (state !== "running" &&
-                    state !== "paused" &&
-                    (!routine.entries.length || !available))
+                    (state !== "paused" || playback?.mode === "kinematic_playback") &&
+                    (!routine.entries.length || !available || !!trackingError))
                 }
                 onClick={() =>
                   state === "running"
                     ? command("pause")
-                    : state === "paused"
+                    : state === "paused" && playback?.mode !== "kinematic_playback"
                       ? command("resume")
                       : run()
                 }
@@ -926,6 +941,7 @@ export default function App() {
                   onDrop={(e) => drop(e, entry.id)}
                   onClick={() => setSelected(entry.id)}
                   onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       setSelected(entry.id);
@@ -934,7 +950,16 @@ export default function App() {
                 >
                   <div className="clip-top">
                     <span>{String(i + 1).padStart(2, "0")}</span>
-                    <GripVertical size={13} />
+                    <button
+                      className="clip-remove"
+                      disabled={busy}
+                      aria-label={`Remove clip ${i + 1}: ${title(entry.motion)}`}
+                      title="Remove clip"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); remove(entry.id); }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </div>
                   <strong>{title(entry.motion)}</strong>
                   <Waveform seed={i} />
@@ -947,6 +972,7 @@ export default function App() {
                     <span>
                       {entry.speed}×{" "}
                       {entry.repeats > 1 && `· ${entry.repeats} loops`}
+                      {!!entry.delay_after && ` · ${entry.delay_after}s hold`}
                     </span>
                   </div>
                 </div>
@@ -974,7 +1000,7 @@ export default function App() {
                 {playback?.mode === "wbc_tracking"
                   ? "Physics tracking"
                   : "Recording playback"}{" "}
-                · Resets between clips
+                · Continuous clip transitions
               </span>
             </div>
           </div>
@@ -1014,8 +1040,8 @@ export default function App() {
                 <Zap size={15} /> Run routine with physics
               </button>
               <p className="tracking-note">
-                Resets at every clip and repeat. No transition blending. Speed
-                changes can affect balance.
+                Keeps position and momentum between clips and repeats. Abrupt moves
+                or speed changes can affect balance.
               </p>
               {playback?.mode === "wbc_tracking" && (
                 <div
@@ -1023,6 +1049,9 @@ export default function App() {
                   aria-label="Routine physics results"
                   aria-live="off"
                 >
+                  {playback.phase === "transition_hold" && <p>
+                    Transition hold <strong>{(playback.transition_remaining || 0).toFixed(1)}s left</strong>
+                  </p>}
                   <span>LIVE TRACKING RESULTS</span>
                   <p>
                     Outcome <strong>{playback.state}</strong>
@@ -1224,6 +1253,20 @@ export default function App() {
                 </div>
               </label>
               <label className="field-label">
+                TRANSITION DELAY <span>{(selectedEntry.delay_after || 0).toFixed(1)}s</span>
+                <input
+                  aria-label="Transition delay"
+                  type="range" min={0} max={10} step={0.1}
+                  value={selectedEntry.delay_after || 0}
+                  disabled={locked}
+                  onChange={(e) => updateEntry({ delay_after: Number(e.target.value) })}
+                />
+              </label>
+              <p className="tracking-note">
+                Hold the final pose before the next clip or repeat. Physics stays active.
+                No delay after the final clip unless Loop is on. This is a hold, not a motion blend.
+              </p>
+              <label className="field-label">
                 REPEAT CLIP
                 <div className="stepper">
                   <button
@@ -1292,8 +1335,8 @@ export default function App() {
               </button>
               <button
                 className="button danger full"
-                disabled={locked}
-                onClick={remove}
+                disabled={busy}
+                onClick={() => remove()}
               >
                 <Trash2 size={14} /> Remove clip
               </button>
@@ -1324,9 +1367,7 @@ export default function App() {
             <div>
               SIMULATION ONLY
               <p>
-                {tab === "physics"
-                  ? "Motor-driven tracking. Resets between clips; stops on detected falls."
-                  : "Preview shows recorded poses. It does not test physical balance."}
+                Motor-driven tracking. Continuous clip transitions; stops on detected falls.
               </p>
             </div>
           </div>

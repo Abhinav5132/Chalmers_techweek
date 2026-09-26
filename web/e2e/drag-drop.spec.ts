@@ -33,8 +33,10 @@ async function setup(page: Page, state = "idle", clips = entries) {
           description: "",
           duration_seconds: 10,
           frames: 600,
+          tracking_available: true,
         })),
         invalid: [],
+        tracking: { available: true },
         physics: { teacher_available: false, student_available: false },
       };
     if (path === "model") result = { meshes: [], geoms: [] };
@@ -88,7 +90,7 @@ test("a paused routine can be reordered with a real mouse drag and restarts inst
     page.getByRole("button", { name: "Play routine", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "Play routine", exact: true }).click();
-  expect(commands.at(-1)).toBe("run");
+  await expect.poll(() => commands.at(-1)).toBe("run");
 });
 
 test("an existing clip can be dragged to the empty area at the end", async ({
@@ -134,4 +136,17 @@ test("running playback explains the edit lock and offers a pause action", async 
     "draggable",
     "true",
   );
+});
+
+
+test("remove buttons delete the selected instance during playback and while stopped", async ({ page }) => {
+  const commands = await setup(page, "running", [entries[0], {...entries[0], id: ids[1]}, entries[2]]);
+  await page.getByRole("button", { name: "Remove clip 2: Jazz walk", exact: true }).click();
+  await expect.poll(() => order(page)).toEqual(["walk", "bow"]);
+  expect(commands).toContain("stop");
+  await page.getByRole("button", { name: "Select clip 1: Jazz walk", exact: true }).click();
+  await page.getByRole("button", { name: "Remove clip", exact: true }).click();
+  await expect.poll(() => order(page)).toEqual(["bow"]);
+  await page.getByRole("button", { name: "Remove clip 1: Karate bow", exact: true }).click();
+  await expect(page.locator(".timeline-empty")).toBeVisible();
 });

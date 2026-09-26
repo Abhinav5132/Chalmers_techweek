@@ -1786,3 +1786,30 @@ a {
     margin-left: auto;
   }
 }
+
+.viewer-stage.viewer-fullscreen,
+.viewer-stage:fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  z-index: 1000;
+  border-radius: 0;
+  background: #191e1c;
+}
+.viewport-bottom > span { margin-right: auto; }
+.clip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.clip-remove:hover, .clip-remove:focus-visible { background: #ffffff26; }
+.clip-remove:disabled { opacity: .4; cursor: wait; }

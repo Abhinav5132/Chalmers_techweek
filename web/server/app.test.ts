@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "./app";
 const id = "7a01aa9d-4c5d-4f21-9c92-e16c69f4b795";
-const entry = { id, motion: "walk", speed: 1, repeats: 1 };
+const entry = { id, motion: "walk", speed: 1, repeats: 1, delay_after: .5 };
 const routine = {
   name: "Walk twice",
   entries: [entry, { ...entry, id: "cf890654-2e59-48c3-8f1e-88d1856d6217" }],
@@ -36,6 +36,8 @@ test("API validates runs, preserves repeated clips, and rejects arbitrary comman
     { ...routine, entries: [{ ...entry, motion: "../secret" }] },
     { ...routine, entries: [{ ...entry, speed: 4 }] },
     { ...routine, entries: [{ ...entry, repeats: 0 }] },
+    { ...routine, entries: [{ ...entry, delay_after: -1 }] },
+    { ...routine, entries: [{ ...entry, delay_after: 11 }] },
   ]) {
     assert.equal((await app.request("/api/run", request(body))).status, 400);
   }
@@ -89,6 +91,7 @@ test("routines round-trip, update atomically, and validate storage identifiers",
     assert.equal(response.status, 201);
     const saved = await response.json();
     assert.equal(saved.entries.length, 2);
+    assert.equal(saved.entries[0].delay_after, .5);
     const renamed = { ...saved, name: "Renamed" };
     assert.equal(
       (await app.request("/api/routines", request(renamed))).status,
@@ -97,6 +100,7 @@ test("routines round-trip, update atomically, and validate storage identifiers",
     const list = await (await app.request("/api/routines")).json();
     assert.equal(list.length, 1);
     assert.equal(list[0].name, "Renamed");
+    assert.equal(list[0].entries[0].delay_after, .5);
     assert.equal(
       (
         await app.request(

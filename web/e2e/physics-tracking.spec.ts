@@ -40,7 +40,7 @@ async function setup(page: Page, available = true) {
             available,
             error: available ? null : "Missing policy.onnx",
             controller: "Phase-2 WBC",
-            transitions: "reset_at_each_clip_and_repeat",
+            transitions: "continuous_anchored",
           },
         },
       });
@@ -104,7 +104,7 @@ async function setup(page: Page, available = true) {
   };
 }
 
-test("routine physics uses its own scene, sends the full sequence, disables seeking, and switches back to preview", async ({
+test("routine physics uses its own scene, sends the full sequence, disables seeking, and Play also runs physics", async ({
   page,
 }) => {
   const control = await setup(page);
@@ -137,9 +137,10 @@ test("routine physics uses its own scene, sends the full sequence, disables seek
     .getByRole("button", { name: "Stop playback", exact: true })
     .click();
   await page.getByRole("button", { name: "Play routine", exact: true }).click();
-  await expect(page.locator(".viewport-mode")).toHaveText("MOTION PREVIEW");
-  await expect(page.getByLabel("Playback position")).toBeEnabled();
-  expect(control.runs[1].mode).toBe("kinematic_playback");
+  await expect(page.locator(".viewport-mode")).toHaveText("PHYSICS · WBC TRACKING");
+  await expect(page.getByLabel("Playback position")).toBeDisabled();
+  await expect.poll(() => control.runs.length).toBe(2);
+  expect(control.runs[1].mode).toBe("wbc_tracking");
 });
 
 test("a fallen trial reports the reason and never silently falls back to animation", async ({
@@ -164,7 +165,7 @@ test("a fallen trial reports the reason and never silently falls back to animati
   expect(control.runs).toHaveLength(1);
 });
 
-test("missing tracking assets leave recording preview available", async ({
+test("missing tracking assets disable all play actions", async ({
   page,
 }) => {
   await setup(page, false);
@@ -173,7 +174,38 @@ test("missing tracking assets leave recording preview available", async ({
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Play routine", exact: true }),
-  ).toBeEnabled();
+  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Preview Jazz walk", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Physics lab", exact: true }).click();
   await expect(page.getByText("Missing policy.onnx")).toBeVisible();
+});
+
+
+test("library preview runs physics and fullscreen can be entered and exited", async ({ page }) => {
+  const control = await setup(page);
+  await page.getByRole("button", { name: "Preview Jazz walk", exact: true }).click();
+  await expect.poll(() => control.runs.length).toBe(1);
+  expect(control.runs[0]).toMatchObject({ mode: "wbc_tracking", entries: [{motion: "walk", repeats: 1}] });
+  await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
+  await expect(page.locator(".viewer-stage")).toHaveClass(/viewer-fullscreen/);
+  const rect = await page.locator(".viewer-stage").boundingBox();
+  expect(rect?.width).toBe(page.viewportSize()!.width);
+  await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
+  await expect(page.locator(".viewer-stage")).not.toHaveClass(/viewer-fullscreen/);
+});
+
+
+test("transition delay is editable, retained in the draft and sent to physics", async ({page}) => {
+  const control = await setup(page);
+  await page.getByRole("button", {name: "Select clip 1: Jazz walk", exact:true}).click();
+  const slider = page.getByRole("slider", {name: "Transition delay", exact:true});
+  await slider.focus();
+  await slider.press("Home");
+  for (let i=0; i<5; i++) await slider.press("ArrowRight");
+  await expect(slider).toHaveValue("0.5");
+  await expect(page.locator(".timeline-clip")).toContainText("0.5s hold");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("g1-draft")!).entries[0].delay_after)).toBe(.5);
+  await page.getByRole("button", {name:"Play routine",exact:true}).click();
+  await expect.poll(() => control.runs.length).toBe(1);
+  expect(control.runs[0].entries[0].delay_after).toBe(.5);
 });
