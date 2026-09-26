@@ -279,3 +279,11 @@ step-feedback height="0.05":
 # Learn local state corrections from the teacher, then qualify without assistance.
 step-feedback-train height="0.05":
     uv run --group training python src/stair_feedback.py train --height {{height}}
+
+# Start the browser motion editor and local Hono/Python backend (npm install --prefix web first).
+web:
+    npm --prefix web run dev
+
+# Type-check and build the browser motion editor.
+web-build:
+    npm --prefix web run build

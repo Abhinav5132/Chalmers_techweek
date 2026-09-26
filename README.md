@@ -4,6 +4,25 @@ Visual, modular, and natural-language-driven control for the **Unitree G1 29-DoF
 
 See the full architectural specification in [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
 
+## Web motion studio
+
+Build a routine in the browser: arrange clips, change speed and repeats, save/load
+sequences, and watch the actual G1 model with live Python/MuJoCo playback.
+
+```bash
+uv sync --group training --group tracking
+npm --prefix web install
+npm --prefix web run dev
+```
+
+Open **http://127.0.0.1:5173**. If the library is empty, run
+`just download-motions` and refresh it. See [web/README.md](web/README.md) for
+controls, production serving, and architecture. **Play** previews recordings;
+**Run with physics** tracks the arranged routine through the phase-2 ONNX controller
+and its matching MuJoCo scene. Physics lab shows tracking error and detected falls.
+Clip/repeat boundaries reset the robot; smooth physical transitions are not implemented.
+
+
 ## Robot commands through Hermes and MCP
 
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) turns your text requests

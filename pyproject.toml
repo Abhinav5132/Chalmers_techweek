@@ -30,6 +30,7 @@ extra-paths = [".venv/lib/python3.11/site-packages/cmeel.prefix/lib/python3.11/s
 unresolved-attribute = "ignore"
 
 [dependency-groups]
+tracking = ["onnxruntime>=1.30.0", "pyyaml>=6.0"]
 training = [
     "certifi>=2026.7.22",
     "gymnasium>=1.3.0",
