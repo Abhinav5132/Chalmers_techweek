@@ -4,6 +4,10 @@ Visual, modular, and natural-language-driven control for the **Unitree G1 29-DoF
 
 See the full architectural specification in [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
 
+For the separate PPO standing and walking implementation on
+`origin/reinforcement-step`, see [Reinforcement training](docs/REINFORCEMENT_TRAINING.md)
+for setup, training, evaluation, rewards and known limitations.
+
 ## Web motion studio
 
 Build a routine in the browser: arrange clips, change speed and repeats, save/load
