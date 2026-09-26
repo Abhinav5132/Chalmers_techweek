@@ -227,3 +227,55 @@ recovery-results:
 # Compare the latest candidate, including a candidate rejected by validation.
 recovery-candidate mode="stand":
     uv run --group training {{viewer_python}} src/recovery_training.py view --candidate --mode {{mode}}
+
+# Assess the existing teacher on three physical 5 cm stairs, plus flat controls.
+stairs-evaluate:
+    uv run --group training python src/stair_teacher.py evaluate
+
+# Watch the stair qualification attempt; this is not a trained stair skill.
+stairs-view:
+    uv run --group training {{viewer_python}} src/stair_teacher.py view
+
+# Download 99 verified terrain-adapted PMT clips, terrain, and the pretrained teacher.
+pmt-setup:
+    uv run --group training python src/pmt_training.py setup
+
+# CPU supervised distillation; qualification blocks training when the teacher fails.
+pmt-train epochs="60" episodes="10" rounds="2":
+    uv run --group training python src/pmt_training.py train --epochs {{epochs}} --episodes {{episodes}} --rounds {{rounds}} --candidates 99
+
+# Watch the imported teacher on its own terrain; rank selects a reference segment.
+pmt-view-teacher rank="0":
+    uv run --group training {{viewer_python}} src/pmt_training.py view-teacher --rank {{rank}}
+
+pmt-view-student:
+    uv run --group training {{viewer_python}} src/pmt_training.py view-student
+
+pmt-results:
+    uv run --group training python src/pmt_training.py results
+
+# Original G1, one 5 cm step, Pinocchio + physical inverse-dynamics teacher.
+step-teacher height="0.05":
+    uv run --group training {{viewer_python}} src/stair_curriculum.py view --height {{height}}
+
+step-teacher-check:
+    uv run --group training python src/stair_curriculum.py evaluate
+
+# Qualified teacher demonstrations -> supervised imitation -> DAgger.
+# Stops at a failed stage; each new stage must pass teacher and student trials.
+step-train epochs="150" episodes="8" rounds="4":
+    uv run --group training python src/stair_learning.py train --epochs {{epochs}} --episodes {{episodes}} --rounds {{rounds}}
+
+step-student checkpoint:
+    uv run --group training {{viewer_python}} src/stair_learning.py view-student --checkpoint "{{checkpoint}}"
+
+step-results:
+    uv run --group training python src/stair_learning.py results
+
+# Watch a qualified supervised feedback student for the requested step height (metres).
+step-feedback height="0.05":
+    uv run --group training {{viewer_python}} src/stair_feedback.py view --height {{height}}
+
+# Learn local state corrections from the teacher, then qualify without assistance.
+step-feedback-train height="0.05":
+    uv run --group training python src/stair_feedback.py train --height {{height}}

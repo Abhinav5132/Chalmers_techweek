@@ -600,3 +600,454 @@ otherwise the original imitation policy. The teacher can be selected for compari
 Running a motion performs inference only: use `just balance-train` or
 `just recovery-train` to update weights. Other recorded motions are not automatically
 converted to learned skills; they still require suitable teacher demonstrations.
+
+### Stair climbing through imitation: teacher qualification
+
+The stair assessment adds three **physical collision steps** (5 cm rise, 30 cm
+tread, 1.2 m width) to MuJoCo. It runs the existing walking teacher with motor
+torques, gravity and contacts. The pelvis is free; reference poses are not lifted
+onto the staircase. This is a qualification experiment, **not a trained stair
+skill**.
+
+From the project directory:
+
+```sh
+just stairs-view       # watch one physical attempt; close the window to exit
+just stairs-evaluate   # run three stair attempts and three matched flat controls
+```
+
+The viewer freezes when the trial falls, finishes, or reaches ten seconds, and
+stays open for inspection. Results are saved to
+`.robot-runtime/imitation/stairs/results.json` (replaced on each evaluation).
+Success requires loaded foot contacts on all three treads in order followed by
+both feet supported on the top tread for at least half a second without falling.
+Contacts against the vertical risers do not count as tread support.
+
+Initial assessment: **0/3 stair completions**, with falls after 4.14–4.16 seconds;
+the same teacher remained upright for all three ten-second flat controls. Its
+flat-ground reference and observations are not designed for stairs. Do not use
+these failed attempts as expert demonstrations. These commands do not train or
+replace any saved student, and do not add a stair skill to Hermes.
+
+To learn stair climbing using supervised imitation, the next requirement is a
+teacher that successfully climbs this geometry (for example a compatible
+pretrained stair controller, or a validated trajectory/whole-body controller).
+Record its observations and joint commands in physics, train a separate student
+with stair/foot-placement information, then use teacher-labelled corrections
+on student rollouts. Evaluate held-out starts and stair dimensions, falls,
+completion rate and time. An existing RL-trained teacher can supply demonstrations
+while the student's training remains supervised. Animation alone is not evidence
+that a controller can support the robot's weight or climb under gravity.
+
+The public [G1 motion-tracking policies](https://huggingface.co/hooneyskywalker/g1-motion-tracking-policies)
+include an obstacle/stair recording, but the author's reported obstacle policy
+has zero completed rollouts and was trained on flat ground. It is not used here
+as a successful stair teacher. No additional dependencies are needed beyond the
+project's existing `training` group.
+
+### PMT terrain imitation on a Mac / CPU (experimental)
+
+This is separate from the jazz teacher and your existing walking/balance students.
+It downloads **99 terrain-optimized G1 clips**, their matching terrain mesh, and
+PMT's `walkdance_bigmap_teacher.pt`. The source motion family is still named
+`walk_dance`, but its optimized trajectories place feet and body on terrain;
+this is not the original JazzWalk recording with a staircase added underneath.
+The source terrain includes raised platforms and steps. A successful six-second
+terrain ascent segment does not establish full-staircase climbing or generalization.
+
+```sh
+cd /Users/bogda/Desktop/GBGTechChallange/Chalmers_techweek
+just pmt-setup                 # download and verify data; already done on this Mac
+just pmt-view-teacher          # view candidate segment 0 in real physics
+just pmt-train                 # qualify teacher, collect, distill, DAgger, evaluate
+just pmt-results              # open latest status, graphs, JSON and training CSV
+just pmt-view-student          # available only after a student was actually trained
+```
+
+`just pmt-view-teacher 4` selects a different segment, ranked by reference foot-height
+gain. It shows an **attempt**, not a promise that the teacher passes. The viewer
+runs physics at 50 control updates per second; the robot has a floating pelvis.
+It freezes when the attempt finishes/falls and stays open until closed.
+The viewer uses the project’s original G1 model, with its original meshes,
+collision geometry, inertias, joint properties and actuator limits. Only the
+terrain is replaced. The PMT controller still uses its own PD gains.
+
+For a shorter training experiment:
+
+```sh
+just pmt-train 40 6 1          # epochs per round, episodes per clip, DAgger rounds
+```
+
+The training command first checks candidate teacher segments. Qualification
+requires the complete six-second segment, no detected fall, at least 12 cm of
+loaded-foot support-height gain, mean torso tracking error below 25 cm and maximum
+error below 50 cm, repeated for three reset seeds. This qualifies terrain ascent,
+not specifically the traversal of a prescribed number of stair risers. If no
+teacher qualifies, the command saves a diagnostic report and **does not train**.
+There is no override to treat a failed teacher as successful demonstrations.
+
+For qualifying clips, each collection reset is checked with the teacher first.
+Initial data come from physical teacher rollouts. DAgger runs the student and asks
+the teacher for action labels at the states the student reaches. A separate small
+network learns those labels with supervised mean-squared-error training; no PPO
+or reward-based student optimization is used. The downloaded teacher was RL-trained.
+Validation episodes are separated from training episodes, normalization uses only
+training data, and final evaluation uses different reset seeds. Those seeds still
+use the **same selected clips/terrain**; this is not a test of unseen stairs.
+Every invocation creates a fresh run and does not overwrite or activate the
+existing balance/recovery policy or add a learned stair skill to Hermes.
+
+Assets: `data/pmt/` (ignored by Git). Runs:
+`.robot-runtime/imitation/pmt-original-g1/<timestamp>/` with `results.json`, `report.html`,
+`results.png`, and `training.csv`. Successful collection/training additionally saves
+`demonstrations.npz`, `policy.pt`, and per-round checkpoints. `latest.json` points
+to the latest attempt, including a blocked qualification attempt.
+
+**Transfer limitations:** PMT originally runs its terrain teacher in Isaac Lab.
+Our adapter uses `unitree_mujoco/unitree_robots/g1/scene_29dof.xml` and its
+original G1 robot. It remaps the joint order and implements the teacher's observation histories,
+and applies residual joint targets with PD motor torques in CPU MuJoCo. Its local
+terrain is sampled from the source mesh at 1 cm resolution, so sharp edges become
+small ramps. MuJoCo contacts and explicit PD integration differ from Isaac Lab's
+solver/implicit actuators. The original G1 also has different collision geometry
+from PMT’s training robot. Teacher qualification is therefore required; downloading
+a checkpoint alone is not evidence that its behavior transfers.
+
+Downloads are pinned to PMT-assets revision
+`38f9f7dba893385c6219620b72314396247c9e82` and verified against a pinned SHA-256
+manifest. The previously downloaded PMT URDF is not used by this experiment. The
+vendored inference code comes from PMT commit
+`1a92390077d329d22cbcdbf89c4a5c982003fbc8`; see `src/pmt_vendor/NOTICE.md` and its
+license files. Only inference components are included, not PMT's BFM-Zero code.
+The only additional declared Python dependency is `certifi` for verified HTTPS
+certificate handling; the existing training group supplies NumPy, PyTorch,
+MuJoCo and Matplotlib. No agent API credits or keys are needed.
+
+Sources: [PMT](https://github.com/Mondo-Robotics/PMT),
+[asset bundle](https://huggingface.co/datasets/aCodeDog/PMT-assets),
+[robot asset installer](https://github.com/Mondo-Robotics/PMT/blob/main/scripts/download_robot_assets.py).
+
+**Robot restored:** PMT originally ran here with a different capsule-based robot.
+That run used 11,116 examples and yielded teacher 6/6 versus student 0/6 on two
+terrain segments. Those results apply only to that earlier robot configuration.
+The original project G1 is now restored. New runs use the separate
+`pmt-original-g1` directory, and student checkpoints are tagged with the robot
+identity. Previous capsule-model checkpoints are rejected; they are not silently
+loaded onto the original G1. New teacher qualification and training are required
+before reporting success for this robot.
+
+To launch a larger fresh experiment, use `just pmt-train 100 20 5` (100 epochs per
+round, 20 episodes per selected clip, five corrective rounds). This creates a new
+run; it does not resume the last checkpoint. More training is an experiment, not a
+guarantee of success. Keep using physical evaluation to decide whether it improves.
+
+### Original G1: learn a single stair step (CPU, Pinocchio + physics)
+
+This is a separate pipeline from the PMT/JazzWalk experiments above. It starts
+with **one 5 cm step** and preserves the repository G1's meshes, masses,
+inertias, joint limits, friction, armature and motor limits. The pelvis is free;
+only reset sets the robot's pose. Gravity, ground contact and motor torques move
+it during a trial.
+
+From the project directory, install the existing dependency groups if needed:
+
+```bash
+uv sync --group training
+```
+
+Watch the **teacher** climb the 5 cm step (about 23 seconds):
+
+```bash
+just step-teacher
+```
+
+The sequence is: settle, transfer weight to the right foot, lift the left foot
+onto the step, transfer weight to the left foot, bring up the right foot, then
+hold with both feet on top. Pinocchio plans joint positions from foot and
+centre-of-mass targets on the original MJCF model. A whole-body inverse-dynamics
+QP uses MuJoCo's actual mass matrix, gravity/bias forces and contact Jacobians.
+It constrains motor torques and non-negative contact forces inside conservative
+friction pyramids. It stops on a fall or loss of the required supporting contact.
+There is no reference-pose playback, base weld or external balancing force.
+
+For a headless teacher check:
+
+```bash
+just step-teacher-check
+```
+
+This writes `latest.json`, `trace.csv` and `contacts.csv` under
+`.robot-runtime/imitation/stair-curriculum/`. Contact forces are in newtons.
+A climb passes only after completing the trial with both feet loaded on the
+step and an upright final hold of at least 2.9 seconds. A short run does not
+count as a successful climb.
+
+Train only the first 5 cm stage:
+
+```bash
+uv run --group training python src/stair_learning.py train \
+  --heights 0.05 --episodes 8 --epochs 150 --rounds 4
+```
+
+Or run the gradual **5 → 7.5 → 10 cm** curriculum:
+
+```bash
+just step-train
+```
+
+Each stage first requires **5/5 successful teacher trials**. Demonstrations are
+collected from successful physical teacher rollouts, with small simulated
+pushes to supply corrective examples. The student learns residual motor
+torques around a joint PD controller; Pinocchio's planner remains in use. The
+student does **not** call the teacher QP during evaluation. This is supervised
+imitation, not reinforcement learning.
+
+DAgger queries the teacher at states reached with a mixture of student and
+teacher actions (teacher fractions 0.9, 0.7, 0.5, 0.3, then 0.1 and 0). Only
+collection uses that assistance. Student evaluation uses **zero teacher
+assistance**. Training and validation data are separated by entire teacher
+episodes. Each round has three physical selection trials; a passing candidate
+must then pass five separate final trials before the next height is permitted.
+A failed teacher/student stage stops the curriculum and keeps its failure data.
+It does not replace the existing walking or standing policies.
+
+Runs are saved under `.robot-runtime/imitation/stair-curriculum/<timestamp>/`:
+
+- `index.html` / `results.png`: physical success rates and learning curves.
+- `results.json` / `evaluations.csv`: trial outcomes, durations, failures, configuration and checkpoints.
+- `<height>m/demonstrations.npz`: observations, residual torque labels, episode IDs
+  and validation split, including accumulated DAgger examples.
+- `<height>m/policy-round-N.pt`: candidate checkpoints, including failed candidates.
+
+Find the latest report:
+
+```bash
+just step-results
+```
+
+Open the printed `index.html` path in a browser. To watch a student, pass an
+actual checkpoint path from that run:
+
+```bash
+just step-student "/absolute/path/to/0.050m/policy-round-0.pt"
+```
+
+**A saved checkpoint or low training error does not mean the student can climb.**
+Use the physical trial results. These experiments cover a single known step,
+a fixed approach and small reset variations; they do not establish robustness
+to arbitrary stairs, major pushes, unknown terrain, or real hardware. Higher
+stages remain blocked until their preceding student passes. All commands run
+locally on CPU without Hermes credits or an API key.
+
+Initial validation of this pipeline: the original G1 teacher passed **5/5**
+23-second trials at 5 cm with both feet loaded during the final hold. An
+8-demonstration run plus four DAgger rounds collected **72,089 labelled states**,
+but its final student passed **0/3** physical trials. Consequently no student
+was promoted and the 7.5 cm stage was not started. Use `step-teacher` to see the
+working climb; the learned student remains experimental.
+
+### Working imitation student: learned local balance feedback
+
+The neural student above failed even with low imitation error. A second,
+smaller supervised student now learns **how motor torques should change when
+pose or velocity drifts**, using local linear regression around a successful
+teacher trajectory. It passed **3/3 selection trials and 5/5 separate final
+trials** on the known 5 cm step, with zero teacher assistance.
+
+Watch the qualified student:
+
+```bash
+just step-feedback
+```
+
+Train this feedback student again on CPU:
+
+```bash
+just step-feedback-train
+```
+
+Training first qualifies the original teacher, then gathers a successful
+physical trajectory and queries the teacher at small positive/negative pose
+and velocity deviations. The initial run used **35,140 labelled nearby states**.
+These additional labels are synthetic teacher queries, not extra successful
+physical demonstrations. Supervised local linear fits learn corrective torque
+feedback. No reward or reinforcement learning is used, and this is not MimicKit.
+
+At runtime the student interpolates the saved local policies within each phase,
+reads its actual pose and velocity, and applies bounded motor torques. It does
+not run the teacher QP, set the robot's pose, or anchor its pelvis. This is a
+new student architecture; the previous neural checkpoints remain available
+but have not been fixed by this change. This feedback run does not use extra
+DAgger rounds; the earlier neural DAgger experiment is retained separately.
+
+Only a student that passes both sets of physical trials becomes the default
+for `step-feedback`. Its checkpoint and report paths are recorded in
+`.robot-runtime/imitation/stair-curriculum/feedback-qualified.json`; all data and
+graphs live in its `feedback-<timestamp>` run folder. `just step-results` prints
+the latest report path. Explicit `.npz` paths also work with `just step-student`.
+
+**Scope:** this policy is trained for the known 5 cm step, fixed approach and
+timing, and small initial variations. The successful tests do not establish
+arbitrary-stair climbing or strong-push recovery. It does not automatically
+unlock the earlier neural student's height curriculum.
+
+### Train and run a single 35 cm step
+
+The feedback pipeline also supports a **0.35 m vertical rise** on the original
+G1. The higher-step teacher lifts each foot clear of the riser before moving it
+forward, shifts the waist during weight transfer, then straightens on top.
+The robot's geometry, mass and motor limits are unchanged, and its pelvis stays
+free. This is one high step, not a flight of stairs.
+
+Run the qualified 35 cm student:
+
+```bash
+just step-feedback 0.35
+```
+
+Train a new 35 cm student locally on CPU:
+
+```bash
+just step-feedback-train 0.35
+```
+
+Watch the teacher instead:
+
+```bash
+just step-teacher 0.35
+```
+
+Training requires 5/5 successful teacher trials before collecting labels.
+For higher steps, it tests a small set of velocity-feedback damping factors at
+the landing transition, using selection trials only. The first candidate to
+pass all three selection trials receives five separate final tests; training
+stops if those final tests fail. No teacher assistance is used in student tests.
+
+The initial 35 cm run used 35,140 teacher-labelled nearby states. Its raw
+student failed; the selected landing velocity-feedback factor of **0.75**
+passed **3/3 selection and 5/5 final trials**. The factor regularizes the learned
+feedback; this remains supervised imitation, not reinforcement learning.
+
+Height-specific qualification files keep policies separate:
+`.robot-runtime/imitation/stair-curriculum/feedback-qualified-0.350m.json`
+points to the accepted 35 cm checkpoint and its report. `just step-feedback`
+without a height still runs the separate 5 cm policy. Use `just step-results`
+to find the latest graphs and trial data. These results cover the trained
+geometry and small initial variations; other stairs need their own evaluation.
+
+### Quick command reference: student, training and analytics
+
+Run these commands from the `Chalmers_techweek` project folder. Install the
+training dependencies first if this is a fresh checkout:
+
+```bash
+uv sync --group training
+```
+
+| What you want to do | Command |
+| --- | --- |
+| Watch the qualified student climb the 35 cm step in physics | `just step-feedback 0.35` |
+| Collect teacher labels, fit a new 35 cm student and evaluate it | `just step-feedback-train 0.35` |
+| Watch the teacher climb the 35 cm step | `just step-teacher 0.35` |
+| Watch the separate qualified 5 cm student | `just step-feedback` |
+| Train and evaluate a new 5 cm feedback student | `just step-feedback-train` |
+| Print the latest training report's location | `just step-results` |
+| Watch a specific saved feedback student | `just step-student "/absolute/path/to/checkpoint.npz"` |
+
+The height argument is the **vertical rise in metres**. Training runs locally
+on CPU and does not need Hermes, API keys or agent credits. Watching a student
+prints that trial's outcome in the terminal; it does not create a new training
+analytics report. Use `step-feedback-train` for the working feedback pipeline;
+`step-train` runs the separate experimental neural imitation/DAgger pipeline.
+
+#### Open the graphs and raw results
+
+After a training run finishes, open its latest report on macOS:
+
+```bash
+open "$(just step-results)"
+```
+
+To reveal that report in Finder instead:
+
+```bash
+open -R "$(just step-results)"
+```
+
+On other systems, run `just step-results` and open the printed `index.html`
+path in a browser. The `.robot-runtime` folder is hidden in Finder; press
+**Command + Shift + .** to show hidden folders.
+
+**Latest does not necessarily mean accepted.** The latest report can belong to
+a different height, the neural pipeline, or a failed training run. To open the
+report belonging to the currently qualified **35 cm student**, use:
+
+```bash
+uv run python - <<'PY'
+import json
+import webbrowser
+from pathlib import Path
+
+pointer = Path(".robot-runtime/imitation/stair-curriculum/feedback-qualified-0.350m.json")
+qualified = json.loads(pointer.read_text())
+report = Path(qualified["report"]).with_name("index.html")
+print(report)
+webbrowser.open(report.resolve().as_uri())
+PY
+```
+
+This qualification pointer is updated only after a student passes its selection
+and final tests. A failed retraining run leaves the previous accepted student
+available. If the pointer is missing on a fresh checkout, train that height
+first; generated policies and reports are local runtime files.
+
+Each feedback training run has its own directory under
+`.robot-runtime/imitation/stair-curriculum/`:
+
+| File | What it contains / how to use it |
+| --- | --- |
+| `index.html` | Browser report with the run status, graphs and a link to full results. |
+| `results.png` | Graphs of physical success rate and mean simulated duration by evaluation group; suitable for a presentation. |
+| `evaluations.csv` | One row per trial: group, height, seed, pass/fail, failure reason, duration and time holding on top. Open in Excel or another spreadsheet app. |
+| `results.json` | Full report, including trial torque ratios, uprightness, teacher mixing, configuration and checkpoint information. |
+| `teacher-labels.npz` | Compressed numerical teacher-query data used to fit the local feedback student; load with NumPy. |
+| `feedback-policy*.npz` | Saved candidate policies. Check the qualification pointer to identify the accepted one. |
+
+For the initial accepted 35 cm run, the directory is
+`.robot-runtime/imitation/stair-curriculum/feedback-0.350m-20260925T212235Z/`.
+Its raw student failed; the selected damping-0.75 student passed **3/3 selection
+and 5/5 final trials**. Keep these groups separate when presenting results.
+
+Read the analytics as follows:
+
+- **`passed` / success rate:** the main outcome. A saved model or a long trial
+  alone is not proof of a successful climb.
+- **`seconds`:** simulated time completed, not CPU training time. Successful
+  trials finish at approximately 23 seconds.
+- **`top_hold_seconds`:** continuous final hold with both feet loaded on the
+  step and the pelvis upright; the test requires at least 2.9 seconds.
+- **`minimum_up_dot`:** lowest pelvis uprightness during the trial; 1 means
+  upright. It is not a percentage success score.
+- **`max_torque_ratio`:** peak motor torque relative to its limit; 1 means
+  the limit was reached.
+- **`teacher_mixing_beta`:** 0 means no teacher-action mixing in the student
+  evaluation.
+
+The feedback student is fitted locally rather than trained over neural-network
+epochs, so its report shows duration alongside success rate, not an epoch-loss
+curve. The small evaluation set covers this known step and small initial
+variations; it does not demonstrate general stair-climbing reliability.
+
+#### Optional: teacher contact and movement diagnostics
+
+To evaluate the 35 cm **teacher** without opening a viewer:
+
+```bash
+uv run --group training python src/stair_curriculum.py evaluate --height 0.35
+```
+
+This writes `latest.json`, `trace.csv` (body/foot positions and uprightness),
+and `contacts.csv` (foot loads) directly under
+`.robot-runtime/imitation/stair-curriculum/`. These files describe the teacher,
+not the student's training results, and are overwritten by the next teacher
+evaluation. Copy them elsewhere if you want to preserve a comparison.
