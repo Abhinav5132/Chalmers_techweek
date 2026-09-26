@@ -25,6 +25,8 @@ export type Routine = z.infer<typeof routineSchema>;
 export type SavedRoutine = Routine & { id: string; updated: string };
 export type Motion = {
   id: string;
+  title?: string | null;
+  category?: string;
   description: string;
   frames: number;
   duration_seconds: number;

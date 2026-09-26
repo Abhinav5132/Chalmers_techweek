@@ -35,6 +35,25 @@ This is a single-user local studio: browser tabs share one simulation session.
 Closing the browser does not stop a routine; Stop ends playback, and terminating
 Hono terminates its Python worker. Long-running looped routines continue until stopped.
 
+## Motion library
+
+`just download-motions` downloads all 61 training recordings from
+[exptech/g1-moves](https://huggingface.co/datasets/exptech/g1-moves), about 195 MB,
+using the pinned revision and attribution in `src/motion_catalog.json`.
+The source is licensed CC BY 4.0; performer credits are retained in the catalog.
+The recordings remain in ignored `data/motions/`, not in Git. Existing valid
+files are retained; downloads are validated before atomically replacing files.
+The original `walk`, `step_touch`, and `bow` IDs remain compatible with saved routines.
+Refresh the motion library after downloading; search supports names, IDs and categories
+(`dance`, `karate`, `bonus`). All local valid NPZ clips are shown, including custom ones.
+
+These additional recordings expand the available targets, not the policy's training
+set. The bundled WBC policy was exported with a three-clip training manifest.
+Extra clips are experimental: compatible file format does not guarantee stable
+tracking, and a detected fall still stops playback. See the
+[full-library physics trial results](../docs/MOTION_LIBRARY_TRIALS.md) for the
+54 completed and 7 fallen trials at normal speed.
+
 ## Use
 
 - Add clips with **+** or drag them from the library onto the timeline.

@@ -16,7 +16,8 @@ npm --prefix web run dev
 ```
 
 Open **http://127.0.0.1:5173**. If the library is empty, run
-`just download-motions` and refresh it. See [web/README.md](web/README.md) for
+`just download-motions` to install all 61 source recordings, then refresh it.
+Extra clips are experimental with the bundled three-clip WBC policy. See [web/README.md](web/README.md) for
 controls, production serving, and architecture. **Play**, library **Preview**, and
 **Run with physics** track the arranged routine through the phase-2 ONNX controller
 and its matching MuJoCo scene. Physics lab shows tracking error and detected falls.

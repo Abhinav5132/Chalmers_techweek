@@ -17,6 +17,7 @@ import numpy as np
 from mcp.server.fastmcp import FastMCP
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE_MOTIONS = {clip["id"]: clip for clip in json.loads((ROOT / "src/motion_catalog.json").read_text())["clips"]}
 DESCRIPTIONS = {
     "walk": "Recorded jazz-walk motion; pose playback, not balanced locomotion.",
     "step_touch": "Recorded side-step / step-touch motion.",
@@ -61,7 +62,9 @@ class MotionPlayer:
                 raise ValueError("Motion contains non-finite values.")
             if np.any(np.linalg.norm(quat[:, 0], axis=1) < 1e-6):
                 raise ValueError("Motion contains a zero root quaternion.")
-            return {"id": motion, "description": DESCRIPTIONS.get(motion, "Local motion clip."),
+            source = SOURCE_MOTIONS.get(motion, {})
+            return {"id": motion, "title": source.get("title"), "category": source.get("category", "local"),
+                    "description": DESCRIPTIONS.get(motion, f"{source['category'].capitalize()} motion from g1-moves. Experimental with the current WBC policy." if source else "Local motion clip."),
                     "frames": len(joints), "duration_seconds": len(joints) / float(fps[0]),
                     "mode": "kinematic_playback"}
 

@@ -1,0 +1,557 @@
+{
+  "dataset": "exptech/g1-moves",
+  "revision": "895d064b2385725e6aabf540461c219afc3e0916",
+  "source_url": "https://huggingface.co/datasets/exptech/g1-moves",
+  "license": "CC-BY-4.0",
+  "clips": [
+    {
+      "id": "B_DadDance",
+      "title": "Dad Dance",
+      "category": "dance",
+      "source_name": "B_DadDance",
+      "path": "dance/B_DadDance/training/B_DadDance.npz",
+      "performer": "Mitch Chaiet",
+      "bytes": 4496130
+    },
+    {
+      "id": "B_LongDance",
+      "title": "Long Dance",
+      "category": "dance",
+      "source_name": "B_LongDance",
+      "path": "dance/B_LongDance/training/B_LongDance.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 12843266
+    },
+    {
+      "id": "B_SpiralDance",
+      "title": "Spiral Dance",
+      "category": "dance",
+      "source_name": "B_SpiralDance",
+      "path": "dance/B_SpiralDance/training/B_SpiralDance.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 5139458
+    },
+    {
+      "id": "B_StretchDance",
+      "title": "Stretch Dance",
+      "category": "dance",
+      "source_name": "B_StretchDance",
+      "path": "dance/B_StretchDance/training/B_StretchDance.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 4634114
+    },
+    {
+      "id": "B_WiggleDance",
+      "title": "Wiggle Dance",
+      "category": "dance",
+      "source_name": "B_WiggleDance",
+      "path": "dance/B_WiggleDance/training/B_WiggleDance.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 4008706
+    },
+    {
+      "id": "step_touch",
+      "title": "Step touch",
+      "category": "dance",
+      "source_name": "J_Dance0_StepTouch",
+      "path": "dance/J_Dance0_StepTouch/training/J_Dance0_StepTouch.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3494402
+    },
+    {
+      "id": "J_Dance11_Gnarly",
+      "title": "Gnarly",
+      "category": "dance",
+      "source_name": "J_Dance11_Gnarly",
+      "path": "dance/J_Dance11_Gnarly/training/J_Dance11_Gnarly.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 4854530
+    },
+    {
+      "id": "J_Dance12_LushLife",
+      "title": "Lush Life",
+      "category": "dance",
+      "source_name": "J_Dance12_LushLife",
+      "path": "dance/J_Dance12_LushLife/training/J_Dance12_LushLife.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3827714
+    },
+    {
+      "id": "J_Dance17_Shuffle",
+      "title": "Shuffle",
+      "category": "dance",
+      "source_name": "J_Dance17_Shuffle",
+      "path": "dance/J_Dance17_Shuffle/training/J_Dance17_Shuffle.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3444226
+    },
+    {
+      "id": "J_Dance18_TikTok",
+      "title": "Tik Tok",
+      "category": "dance",
+      "source_name": "J_Dance18_TikTok",
+      "path": "dance/J_Dance18_TikTok/training/J_Dance18_TikTok.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 1929986
+    },
+    {
+      "id": "J_Dance19_LetsGO",
+      "title": "Lets GO",
+      "category": "dance",
+      "source_name": "J_Dance19_LetsGO",
+      "path": "dance/J_Dance19_LetsGO/training/J_Dance19_LetsGO.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 2671874
+    },
+    {
+      "id": "J_Dance1_Modern",
+      "title": "Modern",
+      "category": "dance",
+      "source_name": "J_Dance1_Modern",
+      "path": "dance/J_Dance1_Modern/training/J_Dance1_Modern.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 4058882
+    },
+    {
+      "id": "J_Dance20_DWG",
+      "title": "DWG",
+      "category": "dance",
+      "source_name": "J_Dance20_DWG",
+      "path": "dance/J_Dance20_DWG/training/J_Dance20_DWG.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 1680898
+    },
+    {
+      "id": "J_Dance21_Blunt",
+      "title": "Blunt",
+      "category": "dance",
+      "source_name": "J_Dance21_Blunt",
+      "path": "dance/J_Dance21_Blunt/training/J_Dance21_Blunt.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3091202
+    },
+    {
+      "id": "J_Dance22_Thrilling",
+      "title": "Thrilling",
+      "category": "dance",
+      "source_name": "J_Dance22_Thrilling",
+      "path": "dance/J_Dance22_Thrilling/training/J_Dance22_Thrilling.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 2901250
+    },
+    {
+      "id": "J_Dance23_MidnightSun",
+      "title": "Midnight Sun",
+      "category": "dance",
+      "source_name": "J_Dance23_MidnightSun",
+      "path": "dance/J_Dance23_MidnightSun/training/J_Dance23_MidnightSun.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 5223682
+    },
+    {
+      "id": "J_Dance2_Salsa",
+      "title": "Salsa",
+      "category": "dance",
+      "source_name": "J_Dance2_Salsa",
+      "path": "dance/J_Dance2_Salsa/training/J_Dance2_Salsa.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3854594
+    },
+    {
+      "id": "J_Dance3_Woah",
+      "title": "Woah",
+      "category": "dance",
+      "source_name": "J_Dance3_Woah",
+      "path": "dance/J_Dance3_Woah/training/J_Dance3_Woah.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3225602
+    },
+    {
+      "id": "J_Dance4_Broadway",
+      "title": "Broadway",
+      "category": "dance",
+      "source_name": "J_Dance4_Broadway",
+      "path": "dance/J_Dance4_Broadway/training/J_Dance4_Broadway.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3005186
+    },
+    {
+      "id": "J_Dance5_Hype",
+      "title": "Hype",
+      "category": "dance",
+      "source_name": "J_Dance5_Hype",
+      "path": "dance/J_Dance5_Hype/training/J_Dance5_Hype.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3397634
+    },
+    {
+      "id": "J_Dance6_Sassy",
+      "title": "Sassy",
+      "category": "dance",
+      "source_name": "J_Dance6_Sassy",
+      "path": "dance/J_Dance6_Sassy/training/J_Dance6_Sassy.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3429890
+    },
+    {
+      "id": "J_Dance7_Party",
+      "title": "Party",
+      "category": "dance",
+      "source_name": "J_Dance7_Party",
+      "path": "dance/J_Dance7_Party/training/J_Dance7_Party.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 4969218
+    },
+    {
+      "id": "J_Dance8_WestCoast",
+      "title": "West Coast",
+      "category": "dance",
+      "source_name": "J_Dance8_WestCoast",
+      "path": "dance/J_Dance8_WestCoast/training/J_Dance8_WestCoast.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 4291842
+    },
+    {
+      "id": "J_Dance9_PeaceMaker",
+      "title": "Peace Maker",
+      "category": "dance",
+      "source_name": "J_Dance9_PeaceMaker",
+      "path": "dance/J_Dance9_PeaceMaker/training/J_Dance9_PeaceMaker.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 6273794
+    },
+    {
+      "id": "J_ShortDance13_SingleLadies",
+      "title": "Single Ladies",
+      "category": "dance",
+      "source_name": "J_ShortDance13_SingleLadies",
+      "path": "dance/J_ShortDance13_SingleLadies/training/J_ShortDance13_SingleLadies.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 1508866
+    },
+    {
+      "id": "J_ShortDance14_Disco",
+      "title": "Disco",
+      "category": "dance",
+      "source_name": "J_ShortDance14_Disco",
+      "path": "dance/J_ShortDance14_Disco/training/J_ShortDance14_Disco.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 1537538
+    },
+    {
+      "id": "J_ShortDance15_Nineties",
+      "title": "Nineties",
+      "category": "dance",
+      "source_name": "J_ShortDance15_Nineties",
+      "path": "dance/J_ShortDance15_Nineties/training/J_ShortDance15_Nineties.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 1410306
+    },
+    {
+      "id": "walk",
+      "title": "Jazz walk",
+      "category": "dance",
+      "source_name": "J_ShortDance16_JazzWalk",
+      "path": "dance/J_ShortDance16_JazzWalk/training/J_ShortDance16_JazzWalk.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 1141506
+    },
+    {
+      "id": "B_AttackKarate",
+      "title": "Attack Karate",
+      "category": "karate",
+      "source_name": "B_AttackKarate",
+      "path": "karate/B_AttackKarate/training/B_AttackKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 5073154
+    },
+    {
+      "id": "bow",
+      "title": "Karate bow",
+      "category": "karate",
+      "source_name": "B_BowKarate",
+      "path": "karate/B_BowKarate/training/B_BowKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 4039170
+    },
+    {
+      "id": "B_ChopsKarate",
+      "title": "Chops Karate",
+      "category": "karate",
+      "source_name": "B_ChopsKarate",
+      "path": "karate/B_ChopsKarate/training/B_ChopsKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 5662722
+    },
+    {
+      "id": "B_CrazyChopsKarate",
+      "title": "Crazy Chops Karate",
+      "category": "karate",
+      "source_name": "B_CrazyChopsKarate",
+      "path": "karate/B_CrazyChopsKarate/training/B_CrazyChopsKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 2601986
+    },
+    {
+      "id": "B_ForwardKarate",
+      "title": "Forward Karate",
+      "category": "karate",
+      "source_name": "B_ForwardKarate",
+      "path": "karate/B_ForwardKarate/training/B_ForwardKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3906562
+    },
+    {
+      "id": "B_LongKarate",
+      "title": "Long Karate",
+      "category": "karate",
+      "source_name": "B_LongKarate",
+      "path": "karate/B_LongKarate/training/B_LongKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 5162754
+    },
+    {
+      "id": "B_SpinKarate",
+      "title": "Spin Karate",
+      "category": "karate",
+      "source_name": "B_SpinKarate",
+      "path": "karate/B_SpinKarate/training/B_SpinKarate.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 2759682
+    },
+    {
+      "id": "M_Move1",
+      "title": "Move 1",
+      "category": "karate",
+      "source_name": "M_Move1",
+      "path": "karate/M_Move1/training/M_Move1.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3351042
+    },
+    {
+      "id": "M_Move10",
+      "title": "Move 10",
+      "category": "karate",
+      "source_name": "M_Move10",
+      "path": "karate/M_Move10/training/M_Move10.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3282946
+    },
+    {
+      "id": "M_Move11",
+      "title": "Move 11",
+      "category": "karate",
+      "source_name": "M_Move11",
+      "path": "karate/M_Move11/training/M_Move11.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 1784834
+    },
+    {
+      "id": "M_Move17",
+      "title": "Move 17",
+      "category": "karate",
+      "source_name": "M_Move17",
+      "path": "karate/M_Move17/training/M_Move17.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 2863618
+    },
+    {
+      "id": "M_Move18",
+      "title": "Move 18",
+      "category": "karate",
+      "source_name": "M_Move18",
+      "path": "karate/M_Move18/training/M_Move18.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 1797378
+    },
+    {
+      "id": "M_Move19",
+      "title": "Move 19",
+      "category": "karate",
+      "source_name": "M_Move19",
+      "path": "karate/M_Move19/training/M_Move19.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 1815298
+    },
+    {
+      "id": "M_Move2",
+      "title": "Move 2",
+      "category": "karate",
+      "source_name": "M_Move2",
+      "path": "karate/M_Move2/training/M_Move2.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3919106
+    },
+    {
+      "id": "M_Move20",
+      "title": "Move 20",
+      "category": "karate",
+      "source_name": "M_Move20",
+      "path": "karate/M_Move20/training/M_Move20.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 2533890
+    },
+    {
+      "id": "M_Move3",
+      "title": "Move 3",
+      "category": "karate",
+      "source_name": "M_Move3",
+      "path": "karate/M_Move3/training/M_Move3.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3437058
+    },
+    {
+      "id": "M_Move4",
+      "title": "Move 4",
+      "category": "karate",
+      "source_name": "M_Move4",
+      "path": "karate/M_Move4/training/M_Move4.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3144962
+    },
+    {
+      "id": "M_Move5",
+      "title": "Move 5",
+      "category": "karate",
+      "source_name": "M_Move5",
+      "path": "karate/M_Move5/training/M_Move5.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3868930
+    },
+    {
+      "id": "M_Move6",
+      "title": "Move 6",
+      "category": "karate",
+      "source_name": "M_Move6",
+      "path": "karate/M_Move6/training/M_Move6.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 3829506
+    },
+    {
+      "id": "M_Move7",
+      "title": "Move 7",
+      "category": "karate",
+      "source_name": "M_Move7",
+      "path": "karate/M_Move7/training/M_Move7.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 2560770
+    },
+    {
+      "id": "M_Move8",
+      "title": "Move 8",
+      "category": "karate",
+      "source_name": "M_Move8",
+      "path": "karate/M_Move8/training/M_Move8.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 1510658
+    },
+    {
+      "id": "M_Move9",
+      "title": "Move 9",
+      "category": "karate",
+      "source_name": "M_Move9",
+      "path": "karate/M_Move9/training/M_Move9.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 2935298
+    },
+    {
+      "id": "M_ShortMove12",
+      "title": "Short Move 12",
+      "category": "karate",
+      "source_name": "M_ShortMove12",
+      "path": "karate/M_ShortMove12/training/M_ShortMove12.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 836866
+    },
+    {
+      "id": "M_ShortMove13",
+      "title": "Short Move 13",
+      "category": "karate",
+      "source_name": "M_ShortMove13",
+      "path": "karate/M_ShortMove13/training/M_ShortMove13.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 965890
+    },
+    {
+      "id": "M_ShortMove14",
+      "title": "Short Move 14",
+      "category": "karate",
+      "source_name": "M_ShortMove14",
+      "path": "karate/M_ShortMove14/training/M_ShortMove14.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 704258
+    },
+    {
+      "id": "M_ShortMove15",
+      "title": "Short Move 15",
+      "category": "karate",
+      "source_name": "M_ShortMove15",
+      "path": "karate/M_ShortMove15/training/M_ShortMove15.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 731138
+    },
+    {
+      "id": "M_ShortMove16",
+      "title": "Short Move 16",
+      "category": "karate",
+      "source_name": "M_ShortMove16",
+      "path": "karate/M_ShortMove16/training/M_ShortMove16.npz",
+      "performer": "Mike Gassaway",
+      "bytes": 793858
+    },
+    {
+      "id": "B_Fence1",
+      "title": "Fence 1",
+      "category": "bonus",
+      "source_name": "B_Fence1",
+      "path": "bonus/B_Fence1/training/B_Fence1.npz",
+      "performer": "Maya Coro",
+      "bytes": 2903042
+    },
+    {
+      "id": "B_Fence2",
+      "title": "Fence 2",
+      "category": "bonus",
+      "source_name": "B_Fence2",
+      "path": "bonus/B_Fence2/training/B_Fence2.npz",
+      "performer": "Maya Coro",
+      "bytes": 1143298
+    },
+    {
+      "id": "B_HandsChop",
+      "title": "Hands Chop",
+      "category": "bonus",
+      "source_name": "B_HandsChop",
+      "path": "bonus/B_HandsChop/training/B_HandsChop.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 3164674
+    },
+    {
+      "id": "B_HandsUp",
+      "title": "Hands Up",
+      "category": "bonus",
+      "source_name": "B_HandsUp",
+      "path": "bonus/B_HandsUp/training/B_HandsUp.npz",
+      "performer": "Jasmine Coro",
+      "bytes": 792066
+    },
+    {
+      "id": "V_Rocamena",
+      "title": "Rocamena",
+      "category": "bonus",
+      "source_name": "V_Rocamena",
+      "path": "bonus/V_Rocamena/training/V_Rocamena.npz",
+      "performer": "YouTube",
+      "bytes": 851202
+    },
+    {
+      "id": "V_PullOver",
+      "title": "Pull Over",
+      "category": "bonus",
+      "source_name": "V_PullOver",
+      "path": "bonus/V_PullOver/training/V_PullOver.npz",
+      "performer": "Video",
+      "bytes": 3809794
+    }
+  ]
+}

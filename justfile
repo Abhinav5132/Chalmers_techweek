@@ -78,52 +78,9 @@ setup-urdf:
         echo "URDF saved to unitree_mujoco/unitree_robots/g1/g1_29dof.urdf"; \
     fi
 
-# Download sample G1 motion clips (.npz) from Hugging Face g1-moves with validation
+# Download all 61 source recordings with validation and stable saved-routine IDs.
 setup-motions:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    mkdir -p data/motions
-    if command -v uv >/dev/null 2>&1; then
-        PY_CMD="uv run python"
-    else
-        PY_CMD="python3"
-    fi
-    base_url="https://huggingface.co/datasets/exptech/g1-moves/resolve/main"
-    val_script="import sys, numpy as np; d = np.load(sys.argv[1]); assert all(k in d for k in ['fps', 'joint_pos', 'body_pos_w', 'body_quat_w'])"
-    items=(
-        "walk.npz:dance/J_ShortDance16_JazzWalk/training/J_ShortDance16_JazzWalk.npz"
-        "step_touch.npz:dance/J_Dance0_StepTouch/training/J_Dance0_StepTouch.npz"
-        "bow.npz:karate/B_BowKarate/training/B_BowKarate.npz"
-    )
-    for item in "${items[@]}"; do
-        target="${item%%:*}"
-        src="${item#*:}"
-        dest="data/motions/$target"
-        tmp_file="data/motions/.${target}.tmp"
-        if [ -f "$dest" ]; then
-            if $PY_CMD -c "$val_script" "$dest" >/dev/null 2>&1; then
-                echo "$dest already exists and is valid."
-                continue
-            else
-                echo "Warning: $dest is corrupted or invalid. Removing and re-downloading..."
-                rm -f "$dest"
-            fi
-        fi
-        echo "Downloading $dest from Hugging Face..."
-        rm -f "$tmp_file"
-        if ! curl -f -L -sSL "$base_url/$src?download=true" -o "$tmp_file"; then
-            echo "Error: Failed to download $target (HTTP or network error)." >&2
-            rm -f "$tmp_file"
-            exit 1
-        fi
-        if ! $PY_CMD -c "$val_script" "$tmp_file" >/dev/null 2>&1; then
-            echo "Error: Downloaded file $target is invalid or corrupted (failed key validation)." >&2
-            rm -f "$tmp_file"
-            exit 1
-        fi
-        mv "$tmp_file" "$dest"
-        echo "Validated and saved $dest"
-    done
+    uv run --group tracking --group training python src/download_motions.py
 
 download-motions: setup-motions
 

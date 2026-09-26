@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   Activity,
   ArrowDown,
@@ -49,7 +49,7 @@ const labels: Record<string, string> = {
   step_touch: "Step touch",
   bow: "Karate bow",
 };
-const title = (id: string) =>
+const fallbackTitle = (id: string) =>
   labels[id] || id.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
 const time = (n: number) =>
   `${Math.floor(n / 60)
@@ -133,6 +133,7 @@ export default function App() {
   const selectedEntry = routine.entries.find((e) => e.id === selected);
   const motions = catalog?.motions || [];
   const motionMap = new Map(motions.map((m) => [m.id, m]));
+  const title = (id: string) => motionMap.get(id)?.title || fallbackTitle(id);
   const duration = (entry: Entry) =>
     ((motionMap.get(entry.motion)?.duration_seconds || 0) / entry.speed) *
     entry.repeats;
@@ -507,6 +508,95 @@ export default function App() {
       setNotice("Motion library refreshed");
     });
   }
+  // Keep the full library out of the 60 Hz pose-render path. Rebuild cards when
+  // their content or editing state changes; paused edits still use current state.
+  const motionCards = useMemo(() => (
+<div className="motion-list">
+            {motions
+              .filter((m) =>
+                `${title(m.id)} ${m.category || ""} ${m.id}`.toLowerCase().includes(query.toLowerCase()),
+              )
+              .map((motion, i) => (
+                <article
+                  key={motion.id}
+                  className={`motion-card ${color(motion.id)}`}
+                  draggable={!locked}
+                  onDragStart={(e) => startDrag(e, "motion", motion.id)}
+                  onDragEnd={endDrag}
+                >
+                  <div className="motion-card-top">
+                    <span className="motion-symbol">
+                      {motion.id === "walk" ? (
+                        <Activity size={20} />
+                      ) : motion.id === "bow" ? (
+                        <ArrowDown size={20} />
+                      ) : (
+                        <ArrowRight size={20} />
+                      )}
+                    </span>
+                    <span className="motion-kind">
+                      {motion.category?.toUpperCase() || (motion.id === "walk" ? "LOCOMOTION" : "GESTURE")}
+                    </span>
+                    <button
+                      className="icon-button"
+                      disabled={locked || routine.entries.length >= 100}
+                      onClick={() => add(motion.id)}
+                      aria-label={`Add ${title(motion.id)}`}
+                      title="Add to routine"
+                    >
+                      <Plus size={17} />
+                    </button>
+                  </div>
+                  <h3>{title(motion.id)}</h3>
+                  <p>
+                    {motion.id === "walk"
+                      ? "A rhythmic stride forward."
+                      : motion.id === "step_touch"
+                        ? "Find your side-to-side rhythm."
+                        : motion.id === "bow"
+                          ? "Finish with a little respect."
+                          : motion.description}
+                  </p>
+                  <Waveform seed={i * 3} />
+                  <div className="motion-card-footer">
+                    <span>
+                      {motion.duration_seconds.toFixed(1)}s <i />{" "}
+                      {motion.frames} frames
+                    </span>
+                    <button
+                      onClick={() => preview(motion)}
+                      disabled={locked || !connected || !catalog?.tracking?.available || !motion.tracking_available}
+                      aria-label={`Preview ${title(motion.id)}`}
+                    >
+                      <Play size={11} fill="currentColor" /> Preview
+                    </button>
+                  </div>
+                </article>
+              ))}
+            {catalog && !motions.length && (
+              <div className="empty-library">
+                <Layers3 />
+                <p>No recordings yet.</p>
+                <span>
+                  Run <code>just download-motions</code>, then refresh.
+                </span>
+              </div>
+            )}
+            {!catalog && (
+              <p className="empty-library">
+                {connected
+                  ? "Loading your recordings…"
+                  : "Waiting for the Python worker…"}
+              </p>
+            )}
+            {motions.length > 0 &&
+              !motions.some((m) =>
+                `${title(m.id)} ${m.category || ""} ${m.id}`.toLowerCase().includes(query.toLowerCase()),
+              ) && (
+                <p className="empty-library">No movements match “{query}”.</p>
+              )}
+          </div>
+  ), [catalog, query, locked, busy, connected, routine, playback?.state]);
   return (
     <div className="studio selection:bg-studio-lime selection:text-studio-ink">
       <header className="topbar">
@@ -626,96 +716,12 @@ export default function App() {
             <span>
               {
                 motions.filter((m) =>
-                  title(m.id).toLowerCase().includes(query.toLowerCase()),
+                  `${title(m.id)} ${m.category || ""} ${m.id}`.toLowerCase().includes(query.toLowerCase()),
                 ).length
               }
             </span>
           </div>
-          <div className="motion-list">
-            {motions
-              .filter((m) =>
-                title(m.id).toLowerCase().includes(query.toLowerCase()),
-              )
-              .map((motion, i) => (
-                <article
-                  key={motion.id}
-                  className={`motion-card ${color(motion.id)}`}
-                  draggable={!locked}
-                  onDragStart={(e) => startDrag(e, "motion", motion.id)}
-                  onDragEnd={endDrag}
-                >
-                  <div className="motion-card-top">
-                    <span className="motion-symbol">
-                      {motion.id === "walk" ? (
-                        <Activity size={20} />
-                      ) : motion.id === "bow" ? (
-                        <ArrowDown size={20} />
-                      ) : (
-                        <ArrowRight size={20} />
-                      )}
-                    </span>
-                    <span className="motion-kind">
-                      {motion.id === "walk" ? "LOCOMOTION" : "GESTURE"}
-                    </span>
-                    <button
-                      className="icon-button"
-                      disabled={locked || routine.entries.length >= 100}
-                      onClick={() => add(motion.id)}
-                      aria-label={`Add ${title(motion.id)}`}
-                      title="Add to routine"
-                    >
-                      <Plus size={17} />
-                    </button>
-                  </div>
-                  <h3>{title(motion.id)}</h3>
-                  <p>
-                    {motion.id === "walk"
-                      ? "A rhythmic stride forward."
-                      : motion.id === "step_touch"
-                        ? "Find your side-to-side rhythm."
-                        : motion.id === "bow"
-                          ? "Finish with a little respect."
-                          : motion.description}
-                  </p>
-                  <Waveform seed={i * 3} />
-                  <div className="motion-card-footer">
-                    <span>
-                      {motion.duration_seconds.toFixed(1)}s <i />{" "}
-                      {motion.frames} frames
-                    </span>
-                    <button
-                      onClick={() => preview(motion)}
-                      disabled={locked || !connected || !catalog?.tracking?.available || !motion.tracking_available}
-                      aria-label={`Preview ${title(motion.id)}`}
-                    >
-                      <Play size={11} fill="currentColor" /> Preview
-                    </button>
-                  </div>
-                </article>
-              ))}
-            {catalog && !motions.length && (
-              <div className="empty-library">
-                <Layers3 />
-                <p>No recordings yet.</p>
-                <span>
-                  Run <code>just download-motions</code>, then refresh.
-                </span>
-              </div>
-            )}
-            {!catalog && (
-              <p className="empty-library">
-                {connected
-                  ? "Loading your recordings…"
-                  : "Waiting for the Python worker…"}
-              </p>
-            )}
-            {motions.length > 0 &&
-              !motions.some((m) =>
-                title(m.id).toLowerCase().includes(query.toLowerCase()),
-              ) && (
-                <p className="empty-library">No movements match “{query}”.</p>
-              )}
-          </div>
+          {motionCards}
           {catalog?.invalid.length ? (
             <div className="invalid-clips">
               {catalog.invalid.length} invalid recording(s) skipped.
