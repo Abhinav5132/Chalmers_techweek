@@ -163,6 +163,17 @@ def quat_to_matrix(q: np.ndarray) -> np.ndarray:
     )
 
 
+def quat_yaw(q: np.ndarray) -> np.ndarray:
+    """Yaw-only wxyz quaternion from a full wxyz quaternion (identity if degenerate)."""
+    q = np.asarray(q, dtype=np.float64)
+    norm = np.linalg.norm(q)
+    if not np.isfinite(norm) or norm < 1e-8:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    w, x, y, z = q / norm
+    yaw = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    return np.array([np.cos(yaw / 2.0), 0.0, 0.0, np.sin(yaw / 2.0)], dtype=np.float64)
+
+
 def _rotated_vel(vel: np.ndarray, q: np.ndarray) -> np.ndarray:
     return quat_to_matrix(q) @ np.asarray(vel, dtype=np.float64)
 
@@ -252,6 +263,7 @@ class WbcPhysicsRunner:
         self.last_action_scaled: np.ndarray = np.zeros(self.n_joints, dtype=np.float64)
         self.clip_origin_pos: np.ndarray = np.zeros(3, dtype=np.float64)
         self.clip_origin_quat: np.ndarray = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        self.clip_ref_p0: np.ndarray = np.zeros(3, dtype=np.float64)
 
     @property
     def has_policy(self) -> bool:
@@ -263,17 +275,33 @@ class WbcPhysicsRunner:
             return None
         return float(self.clip.n_frames - 1) / self.clip.fps
 
-    def load_clip(self, clip_path: str) -> None:
+    def load_clip(self, clip_path: str, anchor_to_current: bool = False) -> None:
         """Load a clip and resample it to the policy rate.
 
-        reset_to_initial_pose() teleports the robot to the clip's frame-0 root
-        pose, so the reference plays absolute (origin = identity), exactly like
-        the training env's RSI reset.
+        If anchor_to_current is True, anchors the clip's frame-0 horizontal position
+        and heading (yaw) to the robot's current pelvis pose in MuJoCo, so the clip continues
+        seamlessly from where the robot currently is without resetting its position.
         """
         self.clip = ClipReference(clip_path, target_fps=1.0 / self.policy_step_dt)
         self.frame = 0
-        self.clip_origin_pos[:] = 0.0
-        self.clip_origin_quat[:] = (1.0, 0.0, 0.0, 0.0)
+
+        ref_pos, ref_quat, _, _ = self.clip.anchor_frame(0, self.npz_anchor_idx)
+        self.clip_ref_p0 = np.asarray(ref_pos, dtype=np.float64).copy()
+
+        if not anchor_to_current:
+            self.clip_origin_pos[:] = 0.0
+            self.clip_origin_quat[:] = (1.0, 0.0, 0.0, 0.0)
+        else:
+            mj.mj_forward(self.mj_model, self.mj_data)
+            robot_pos = np.asarray(self.mj_data.xpos[self.root_body_id], dtype=np.float64)
+            robot_quat = np.asarray(self.mj_data.xquat[self.root_body_id], dtype=np.float64)
+            yaw_robot = quat_yaw(robot_quat)
+            yaw_ref = quat_yaw(ref_quat)
+
+            self.clip_origin_pos[0] = robot_pos[0]
+            self.clip_origin_pos[1] = robot_pos[1]
+            self.clip_origin_pos[2] = 0.0
+            self.clip_origin_quat = quat_multiply(yaw_robot, quat_conjugate(yaw_ref))
 
     def reset_to_initial_pose(self) -> None:
         """Initialise the robot to the first frame of the active clip (RSI-style)."""
@@ -299,15 +327,35 @@ class WbcPhysicsRunner:
             raise RuntimeError("No clip loaded.")
         i = min(self.frame, self.clip.n_frames - 1)
         pos, quat_wxyz, lin, ang = self.clip.anchor_frame(i, self.npz_anchor_idx)
-        pos = np.asarray(pos, dtype=np.float64) + self.clip_origin_pos
-        quat_wxyz = quat_multiply(self.clip_origin_quat, quat_wxyz)
-        lin = _rotated_vel(lin, self.clip_origin_quat)
-        ang = _rotated_vel(ang, self.clip_origin_quat)
+        pos = np.asarray(pos, dtype=np.float64)
+
+        if np.all(self.clip_origin_pos == 0.0) and np.array_equal(self.clip_origin_quat, [1.0, 0.0, 0.0, 0.0]):
+            ref_pos = pos
+            ref_quat = quat_wxyz
+            ref_lin = lin
+            ref_ang = ang
+        else:
+            rel_pos = pos - self.clip_ref_p0
+            rot_mat = quat_to_matrix(self.clip_origin_quat)
+            rel_pos_rot = rot_mat @ np.array([rel_pos[0], rel_pos[1], 0.0], dtype=np.float64)
+
+            ref_pos = np.array(
+                [
+                    self.clip_origin_pos[0] + rel_pos_rot[0],
+                    self.clip_origin_pos[1] + rel_pos_rot[1],
+                    pos[2],
+                ],
+                dtype=np.float64,
+            )
+            ref_quat = quat_multiply(self.clip_origin_quat, quat_wxyz)
+            ref_lin = rot_mat @ np.asarray(lin, dtype=np.float64)
+            ref_ang = rot_mat @ np.asarray(ang, dtype=np.float64)
+
         return {
-            "ref_base_height": np.array([pos[2]], dtype=np.float64),
-            "ref_base_lin_vel_b": quat_to_matrix(quat_wxyz).T @ lin,
-            "ref_base_ang_vel_b": quat_to_matrix(quat_wxyz).T @ ang,
-            "ref_gravity_b": quat_to_matrix(quat_wxyz).T @ np.array([0.0, 0.0, -1.0]),
+            "ref_base_height": np.array([ref_pos[2]], dtype=np.float64),
+            "ref_base_lin_vel_b": quat_to_matrix(ref_quat).T @ ref_lin,
+            "ref_base_ang_vel_b": quat_to_matrix(ref_quat).T @ ref_ang,
+            "ref_gravity_b": quat_to_matrix(ref_quat).T @ np.array([0.0, 0.0, -1.0]),
             "ref_joint_pos": self.clip.joint_pos[i],
         }
 

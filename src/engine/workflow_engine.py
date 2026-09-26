@@ -107,8 +107,10 @@ class MotionClipNode(WorkflowNode):
     def on_enter(self, context: WorkflowContext) -> None:
         self.elapsed = 0.0
         if os.path.exists(self.clip_path):
-            context.wbc_runner.load_clip(self.clip_path)
-            context.wbc_runner.reset_to_initial_pose()
+            is_first_clip = (context.step_count == 0)
+            context.wbc_runner.load_clip(self.clip_path, anchor_to_current=not is_first_clip)
+            if is_first_clip:
+                context.wbc_runner.reset_to_initial_pose()
             clip_dur = context.wbc_runner.clip_duration()
             if clip_dur is not None:
                 self.clip_duration = clip_dur / self.speed
@@ -294,6 +296,8 @@ class WorkflowEngine:
         self.active_node_idx = 0
         self.is_finished = False
         self._node_entered = False
+        self.context.step_count = 0
+        self.context.sim_time = 0.0
 
     @property
     def current_node(self) -> WorkflowNode | None:

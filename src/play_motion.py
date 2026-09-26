@@ -151,6 +151,36 @@ def load_motion_clip(path: str) -> dict[str, np.ndarray]:
     }
 
 
+def extract_yaw(q: np.ndarray) -> float:
+    """Extract yaw angle (radians) around z from wxyz quaternion."""
+    q = np.asarray(q, dtype=np.float64)
+    norm = np.linalg.norm(q)
+    if not np.isfinite(norm) or norm < 1e-8:
+        return 0.0
+    w, x, y, z = q / norm
+    return float(np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+
+
+def quat_from_yaw(yaw: float) -> np.ndarray:
+    """Generate wxyz quaternion representing pure rotation around z-axis."""
+    return np.array([np.cos(yaw / 2.0), 0.0, 0.0, np.sin(yaw / 2.0)], dtype=np.float64)
+
+
+def quat_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    """Multiply two wxyz quaternions."""
+    w1, x1, y1, z1 = np.asarray(q1, dtype=np.float64)
+    w2, x2, y2, z2 = np.asarray(q2, dtype=np.float64)
+    return np.array(
+        [
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 - x1 * y2 + y1 * x2 + z1 * w2,
+        ],
+        dtype=np.float64,
+    )
+
+
 def main() -> None:
     args: argparse.Namespace = parse_args()
 
@@ -266,6 +296,9 @@ def main() -> None:
                     pass
 
             while viewer.is_running():
+                current_origin_pos: np.ndarray | None = None
+                current_origin_yaw: float = 0.0
+
                 for item_idx, it in enumerate(items):
                     if not viewer.is_running():
                         break
@@ -283,14 +316,51 @@ def main() -> None:
                         n_frames = int(jpos.shape[0])
                         frame_dt = (1.0 / fps) / speed
 
+                        # Body index 0 is pelvis
+                        p0 = bpos[0, 0, :].copy()
+                        q0 = bquat[0, 0, :].copy()
+                        yaw0 = extract_yaw(q0)
+
+                        if current_origin_pos is None:
+                            origin_x = p0[0]
+                            origin_y = p0[1]
+                            delta_yaw = 0.0
+                        else:
+                            origin_x = current_origin_pos[0]
+                            origin_y = current_origin_pos[1]
+                            delta_yaw = current_origin_yaw - yaw0
+
+                        q_rot = quat_from_yaw(delta_yaw)
+                        cos_yaw = np.cos(delta_yaw)
+                        sin_yaw = np.sin(delta_yaw)
+
+                        cur_x = origin_x
+                        cur_y = origin_y
+                        cur_z = p0[2]
+                        cur_quat = quat_multiply(q_rot, q0)
+
                         # Play clip frames
                         for k in range(n_frames):
                             if not viewer.is_running():
                                 break
                             step_start = time.time()
 
-                            mj_data.qpos[0:3] = bpos[k, 0, :]
-                            mj_data.qpos[3:7] = bquat[k, 0, :]
+                            rel_x = bpos[k, 0, 0] - p0[0]
+                            rel_y = bpos[k, 0, 1] - p0[1]
+                            rot_x = cos_yaw * rel_x - sin_yaw * rel_y
+                            rot_y = sin_yaw * rel_x + cos_yaw * rel_y
+
+                            cur_x = origin_x + rot_x
+                            cur_y = origin_y + rot_y
+                            cur_z = bpos[k, 0, 2]
+
+                            cur_quat = quat_multiply(q_rot, bquat[k, 0, :])
+
+                            mj_data.qpos[0] = cur_x
+                            mj_data.qpos[1] = cur_y
+                            mj_data.qpos[2] = cur_z
+                            mj_data.qpos[3:7] = cur_quat
+
                             n_j = min(len(mj_data.qpos) - 7, jpos.shape[1])
                             mj_data.qpos[7 : 7 + n_j] = jpos[k, :n_j]
 
@@ -298,13 +368,16 @@ def main() -> None:
 
                             # If camera was switched to free mode, keep lookat centered on robot
                             if args.follow and viewer.cam.type == mj.mjtCamera.mjCAMERA_FREE:
-                                viewer.cam.lookat[0:3] = bpos[k, 0, :]
+                                viewer.cam.lookat[0:3] = [cur_x, cur_y, cur_z]
 
                             viewer.sync()
 
                             elapsed = time.time() - step_start
                             if frame_dt > elapsed:
                                 time.sleep(frame_dt - elapsed)
+
+                        current_origin_pos = np.array([cur_x, cur_y, cur_z], dtype=np.float64)
+                        current_origin_yaw = extract_yaw(cur_quat)
 
                     # Transition delay: hold pose for delay_after seconds
                     if delay_after > 0.0 and viewer.is_running():
@@ -320,11 +393,30 @@ def main() -> None:
                     break
     else:
         print("\nRunning in headless verification mode...")
+        current_origin_pos = None
+        current_origin_yaw = 0.0
         for it in items:
             clip_path = it["clip_path"]
             if clip_path and os.path.exists(clip_path):
                 motion = load_motion_clip(clip_path)
-                print(f"Verified clip: {it['name']} ({len(motion['joint_pos'])} frames)")
+                p0 = motion["body_pos_w"][0, 0, :].copy()
+                q0 = motion["body_quat_w"][0, 0, :].copy()
+                yaw0 = extract_yaw(q0)
+                if current_origin_pos is None:
+                    origin_x, origin_y, delta_yaw = p0[0], p0[1], 0.0
+                else:
+                    origin_x, origin_y = current_origin_pos[0], current_origin_pos[1]
+                    delta_yaw = current_origin_yaw - yaw0
+                p_end = motion["body_pos_w"][-1, 0, :].copy()
+                rel_x = p_end[0] - p0[0]
+                rel_y = p_end[1] - p0[1]
+                end_x = origin_x + (np.cos(delta_yaw) * rel_x - np.sin(delta_yaw) * rel_y)
+                end_y = origin_y + (np.sin(delta_yaw) * rel_x + np.cos(delta_yaw) * rel_y)
+                end_z = p_end[2]
+                end_quat = quat_multiply(quat_from_yaw(delta_yaw), motion["body_quat_w"][-1, 0, :])
+                current_origin_pos = np.array([end_x, end_y, end_z], dtype=np.float64)
+                current_origin_yaw = extract_yaw(end_quat)
+                print(f"Verified clip: {it['name']} ({len(motion['joint_pos'])} frames, end pos: [{end_x:+.2f}, {end_y:+.2f}, {end_z:.2f}])")
         print("Sequence verification completed successfully.")
 
 
