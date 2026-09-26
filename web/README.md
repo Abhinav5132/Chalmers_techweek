@@ -35,6 +35,39 @@ This is a single-user local studio: browser tabs share one simulation session.
 Closing the browser does not stop a routine; Stop ends playback, and terminating
 Hono terminates its Python worker. Long-running looped routines continue until stopped.
 
+## Task demos
+
+Open **Tasks** to select **Climb a 5 cm step**, **Climb a 35 cm step**, or
+**Lift a box**. Selecting a card prepares that scene without starting it.
+**Run demo**, **Pause/Resume**, **Stop**, and **Reset demo** control its own trial;
+Reset returns to the selected scene's initial state. Fullscreen remains available
+on the live viewer. These tasks run independently of the dance timeline.
+
+The Tasks integration imports `grabObj` commit `5d44ab3` and reuses
+`stair_curriculum.Teacher`, `grasp_learning.Simulation` and `GraspTeacher`.
+`task_session.py` advances them at their native 10 ms control period; MuJoCo uses
+2 ms substeps. Step geometry, pedestal and free box are streamed to the browser
+along with the robot. Neither the box nor the robot is attached to an anchor.
+
+Progress reflects measured foot/hand contact, lift height and stable hold, not
+elapsed-time success guesses. Each preset runs a full 23-second step trial or
+12-second lift trial. Step success requires both feet on top with a final hold
+of at least 2.9 seconds. Box success uses the upstream >8 cm lift, two-hand contact,
+no support contact, uprightness and >=2-second final hold checks. Failure reasons
+remain visible; a stopped or paused trial is not a successful trial.
+
+**Teacher** works without trained weights. **Learned student** appears under
+Controller options only as available when a valid, height-matched qualified
+checkpoint is installed. This checkout did not include the friend's local weights.
+The adapter reads the branch's existing `qualified.json` / `feedback-qualified*.json`
+pointers. Use `just grasp-train` or `just step-feedback-train <height>` outside the
+web UI to train, then refresh the library. Missing or incompatible checkpoints
+produce an explicit error; the app never substitutes a teacher for a requested student.
+
+These are known-scene demonstrations. They do not implement general object
+recognition, arbitrary stairs, walking while carrying, or a combined climb-and-pickup
+mission. The current box is 150 g, lifted by friction between fixed rubber hands.
+
 ## Motion library
 
 `just download-motions` downloads all 61 training recordings from

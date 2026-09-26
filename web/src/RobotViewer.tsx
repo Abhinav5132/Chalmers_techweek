@@ -63,9 +63,12 @@ export default function RobotViewer({
     scene.fog = new THREE.Fog(0x191e1c, 9, 24);
     const camera = new THREE.PerspectiveCamera(36, 1, 0.01, 100);
     camera.up.set(0, 0, 1);
-    camera.position.set(1.65, -2.1, 1.4);
+    const stairs = model.id === "step_5cm" || model.id === "step_35cm";
+    const cameraOffset = stairs ? new THREE.Vector3(-1.6, -2.8, 1.6) : new THREE.Vector3(1.65, -2.1, 1.4);
+    const targetOffset = stairs ? .2 : 0;
+    camera.position.copy(cameraOffset);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0, 0.65);
+    controls.target.set(targetOffset, 0, 0.65);
     controls.enableDamping = true;
     controls.minDistance = 0.6;
     controls.maxDistance = 12;
@@ -162,8 +165,8 @@ export default function RobotViewer({
       const root = model.root_body || 1;
       const x = p?.[root * 3] || 0,
         y = p?.[root * 3 + 1] || 0;
-      controls.target.set(x, y, 0.65);
-      camera.position.set(x + 1.65, y - 2.1, 1.4);
+      controls.target.set(x + targetOffset, y, 0.65);
+      camera.position.copy(cameraOffset).add(new THREE.Vector3(x, y, 0));
       controls.update();
     };
     const resize = new ResizeObserver(() => {
@@ -251,7 +254,9 @@ export default function RobotViewer({
         UNITREE G1
       </div>
       <div className="viewport-mode">
-        {playback?.mode === "wbc_tracking"
+        {playback?.mode === "task_physics"
+          ? playback.task_id === "box_lift" ? "PHYSICS · BOX LIFT" : "PHYSICS · STEP CLIMB"
+          : playback?.mode === "wbc_tracking"
           ? "PHYSICS · WBC TRACKING"
           : playback?.mode === "motor_driven_physics"
             ? "PHYSICS TRIAL"

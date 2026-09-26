@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   Activity,
+  Box,
   ArrowDown,
   ArrowLeft,
   ArrowRight,
@@ -28,9 +29,12 @@ import {
   Zap,
 } from "lucide-react";
 import RobotViewer from "./RobotViewer";
+import TasksPanel, { TaskCards } from "./TasksPanel";
 import {
   routineSchema,
   type Catalog,
+  type SceneId,
+  type TaskId,
   type Entry,
   type Motion,
   type Playback,
@@ -118,7 +122,9 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [library, setLibrary] = useState(false);
-  const [tab, setTab] = useState<"compose" | "physics">("compose");
+  const [tab, setTab] = useState<"compose" | "physics" | "tasks">("compose");
+  const [demo, setDemo] = useState<TaskId>("step_5cm");
+  const [demoController, setDemoController] = useState("teacher");
   const [task, setTask] = useState("stand");
   const [controller, setController] = useState("teacher");
   const [seconds, setSeconds] = useState(10);
@@ -182,7 +188,7 @@ export default function App() {
       cancelled = true;
     };
   }, [connected]);
-  function loadModel(scene: "g1" | "wbc") {
+  function loadModel(scene: SceneId) {
     if (!models.current.has(scene))
       models.current.set(
         scene,
@@ -195,6 +201,12 @@ export default function App() {
       );
     return models.current.get(scene)!;
   }
+  useEffect(() => {
+    if (playback?.mode === "task_physics" && playback.task_id) {
+      setDemo(playback.task_id);
+      setDemoController(playback.controller || "teacher");
+    }
+  }, [playback?.task_id, playback?.controller]);
   const scene = playback?.model_id || "g1";
   useEffect(() => {
     if (!connected) return;
@@ -300,6 +312,36 @@ export default function App() {
   }
   const command = (name: string, body: unknown = {}) =>
     action(async () => setPlayback(await api<Playback>(name, body)));
+  const demoPreset = catalog?.tasks?.find(p => p.id === demo);
+  const canDemo = !!demoPreset?.available && (demoController === "teacher" || demoPreset.student_available);
+  function leaveTasks(nextTab: "compose" | "physics") {
+    if (playback?.mode !== "task_physics") {
+      setTab(nextTab);
+      return;
+    }
+    void action(async () => {
+      const result = await api<Playback>("task_exit", {});
+      setPlayback(result);
+      setModel(await loadModel("g1"));
+      setTab(nextTab);
+    });
+  }
+  function prepareTask(id: TaskId) {
+    setDemo(id);
+    setDemoController("teacher");
+    void launchTask("task_prepare", id, "teacher");
+  }
+  function launchTask(actionName: "task_prepare" | "task_run", id = demo, controller = demoController) {
+    return action(async () => {
+      if (actionName === "task_prepare" && (state === "running" || state === "paused")) {
+        setPlayback(await api<Playback>("stop", {}));
+      }
+      const robot = await loadModel(id);
+      const result = await api<Playback>(actionName, {task: id, controller});
+      setModel(robot);
+      setPlayback(result);
+    });
+  }
   const run = () => startRoutine("wbc_tracking");
   function startRoutine(mode: "kinematic_playback" | "wbc_tracking") {
     if (mode === "wbc_tracking") setTab("physics");
@@ -598,7 +640,7 @@ export default function App() {
           </div>
   ), [catalog, query, locked, busy, connected, routine, playback?.state]);
   return (
-    <div className="studio selection:bg-studio-lime selection:text-studio-ink">
+    <div className={`studio selection:bg-studio-lime selection:text-studio-ink ${tab === "tasks" ? "tasks-mode" : ""}`}>
       <header className="topbar">
         <a href="/" className="brand" aria-label="G1 Motion Studio">
           <span className="brand-mark">
@@ -623,12 +665,13 @@ export default function App() {
       </header>
       <div className="projectbar">
         <div className="project-title">
-          <span className="eyebrow">ROUTINE EDITOR</span>
+          <span className="eyebrow">{tab === "tasks" ? "PHYSICS DEMOS" : "ROUTINE EDITOR"}</span>
           <div>
             <input
               aria-label="Routine name"
               maxLength={80}
-              value={routine.name}
+              disabled={tab === "tasks"}
+              value={tab === "tasks" ? "G1 task demos" : routine.name}
               onChange={(e) =>
                 setRoutine((r) => ({ ...r, name: e.target.value }))
               }
@@ -749,19 +792,25 @@ export default function App() {
             <div className="tabs">
               <button
                 className={tab === "compose" ? "active" : ""}
-                onClick={() => setTab("compose")}
+                disabled={busy}
+                onClick={() => leaveTasks("compose")}
               >
                 <Layers3 size={14} /> Compose
               </button>
               <button
                 className={tab === "physics" ? "active" : ""}
-                onClick={() => setTab("physics")}
+                disabled={busy}
+                onClick={() => leaveTasks("physics")}
               >
                 <Zap size={14} /> Physics lab
               </button>
+              <button className={tab === "tasks" ? "active" : ""} disabled={busy} onClick={() => {
+                setTab("tasks");
+                if (!busy && playback?.mode !== "task_physics") prepareTask(demo);
+              }}><Box size={14}/> Tasks</button>
             </div>
             <span className="scene-label">
-              <span /> Flat ground <ChevronDown size={12} />
+              <span /> {playback?.mode === "task_physics" ? playback.task_id === "box_lift" ? "Box + pedestal" : "Single step" : "Flat ground"} <ChevronDown size={12} />
             </span>
           </div>
           <RobotViewer model={model} playback={playback} />
@@ -783,21 +832,21 @@ export default function App() {
                   !connected ||
                   (state !== "running" &&
                     (state !== "paused" || playback?.mode === "kinematic_playback") &&
-                    (!routine.entries.length || !available || !!trackingError))
+                    (tab === "tasks" ? !canDemo : !routine.entries.length || !available || !!trackingError))
                 }
                 onClick={() =>
                   state === "running"
                     ? command("pause")
                     : state === "paused" && playback?.mode !== "kinematic_playback"
                       ? command("resume")
-                      : run()
+                      : tab === "tasks" ? launchTask("task_run") : run()
                 }
                 aria-label={
                   state === "running"
                     ? "Pause playback"
                     : state === "paused"
                       ? "Resume playback"
-                      : "Play routine"
+                      : tab === "tasks" ? "Play task demo" : "Play routine"
                 }
               >
                 {busy ? (
@@ -871,7 +920,9 @@ export default function App() {
               {state === "idle" ? "Ready" : state}
             </span>
           </div>
-          <div className="timeline">
+          {tab === "tasks" ? <TaskCards presets={catalog?.tasks || []} selected={demo}
+            disabled={busy || !connected}
+            choose={prepareTask}/> : <div className="timeline">
             <div className="timeline-heading">
               <h2>
                 Your sequence{" "}
@@ -1009,14 +1060,17 @@ export default function App() {
                 · Continuous clip transitions
               </span>
             </div>
-          </div>
+          </div>}
         </section>
         <aside className="inspector">
           <div className="panel-heading">
-            <h2>{tab === "physics" ? "Physics lab" : "Clip settings"}</h2>
+            <h2>{tab === "tasks" ? "Task controls" : tab === "physics" ? "Physics lab" : "Clip settings"}</h2>
             <SlidersHorizontal size={16} />
           </div>
-          {tab === "physics" ? (
+          {tab === "tasks" ? <TasksPanel preset={demoPreset} playback={playback}
+            controller={demoController} setController={setDemoController} busy={busy} connected={connected}
+            run={() => void launchTask("task_run")} command={(name) => void command(name)}/>
+          : tab === "physics" ? (
             <div className="inspector-content physics-panel">
               <div className="section-icon">
                 <Zap size={22} />
@@ -1373,7 +1427,7 @@ export default function App() {
             <div>
               SIMULATION ONLY
               <p>
-                Motor-driven tracking. Continuous clip transitions; stops on detected falls.
+                {tab === "tasks" ? "Gravity, contact and motor torques. Fixed-scene demonstrations." : "Motor-driven tracking. Continuous clip transitions; stops on detected falls."}
               </p>
             </div>
           </div>

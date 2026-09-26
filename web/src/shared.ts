@@ -1,3 +1,7 @@
+export type SceneId = "g1" | "wbc" | "step_5cm" | "step_35cm" | "box_lift";
+export type TaskId = "step_5cm" | "step_35cm" | "box_lift";
+export type TaskPreset = { id: TaskId; title: string; height?: number; seconds: number;
+  available: boolean; error?: string | null; student_available: boolean; student_error?: string | null };
 import { z } from "zod";
 export const entrySchema = z.object({
   id: z.string().uuid(),
@@ -34,6 +38,7 @@ export type Motion = {
   tracking_error?: string | null;
 };
 export type Catalog = {
+  tasks?: TaskPreset[];
   motions: Motion[];
   invalid: { id: string; error: string }[];
   tracking?: {
@@ -49,6 +54,20 @@ export type Catalog = {
   };
 };
 export type Playback = {
+  task_id?: TaskId;
+  controller?: string;
+  passed?: boolean;
+  stages?: string[];
+  stage_index?: number;
+  upright?: number;
+  lift_m?: number;
+  hand_contacts?: number[];
+  table_contact_n?: number;
+  foot_contacts?: number[];
+  top_contacts?: number[];
+  hold_seconds?: number;
+  hold_required?: number;
+
   phase?: "clip" | "transition_hold";
   transition_remaining?: number;
   state:
@@ -59,8 +78,8 @@ export type Playback = {
     | "completed"
     | "failed"
     | "fallen";
-  mode: "kinematic_playback" | "motor_driven_physics" | "wbc_tracking";
-  model_id?: "g1" | "wbc";
+  mode: "kinematic_playback" | "motor_driven_physics" | "wbc_tracking" | "task_physics";
+  model_id?: SceneId;
   tracking_rmse_rad?: number;
   tracking_error_rad?: number;
   max_tracking_rmse_rad?: number;
@@ -82,7 +101,7 @@ export type Playback = {
   max_drift_m?: number;
 };
 export type RobotModel = {
-  id?: "g1" | "wbc";
+  id?: SceneId;
   root_body?: number;
   meshes: { vertices: number[]; indices: number[] }[];
   geoms: {

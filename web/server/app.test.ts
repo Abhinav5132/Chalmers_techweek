@@ -165,3 +165,18 @@ test("physics routine requests preserve the controller mode and isolate model ca
   ]);
   assert.equal((await app.request("/api/model?scene=../../file")).status, 400);
 });
+
+test("task API validates prepared presets and serves independent scene caches", async () => {
+  const calls: {action: string; payload: any}[] = [];
+  const app = createApp({request: async(action,payload)=>{calls.push({action,payload}); return {state:"idle"};}}, "/unused");
+  for(const action of ["task_prepare","task_run"]){
+    assert.equal((await app.request(`/api/${action}`,request({task:"box_lift",controller:"teacher"}))).status,200);
+    assert.equal(calls.at(-1)?.action,action);
+    assert.equal((await app.request(`/api/${action}`,request({task:"../custom",controller:"teacher"}))).status,400);
+    assert.equal((await app.request(`/api/${action}`,request({task:"step_5cm",controller:"custom"}))).status,400);
+  }
+  for(const scene of ["step_5cm","step_35cm","box_lift"]){
+    for(let i=0;i<2;i++)assert.equal((await app.request(`/api/model?scene=${scene}`)).status,200);
+    assert.equal(calls.filter(c=>c.action==="model"&&c.payload.scene===scene).length,1);
+  }
+});

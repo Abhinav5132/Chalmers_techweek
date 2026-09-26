@@ -64,7 +64,7 @@ export function createApp(bridge: Bridge, storage: string) {
   });
   const models = new Map<string, Promise<unknown>>();
   app.get("/api/model", async (c) => {
-    const scene = z.enum(["g1", "wbc"]).parse(c.req.query("scene") || "g1");
+    const scene = z.enum(["g1", "wbc", "step_5cm", "step_35cm", "box_lift"]).parse(c.req.query("scene") || "g1");
     if (!models.has(scene))
       models.set(
         scene,
@@ -93,7 +93,7 @@ export function createApp(bridge: Bridge, storage: string) {
       await bridge.request("run", mode ? { ...routine, mode } : routine),
     );
   });
-  for (const action of ["pause", "resume", "stop", "reset"]) {
+  for (const action of ["pause", "resume", "stop", "reset", "task_exit"]) {
     app.post(`/api/${action}`, async (c) =>
       c.json(await bridge.request(action)),
     );
@@ -104,6 +104,15 @@ export function createApp(bridge: Bridge, storage: string) {
       .parse(await c.req.json());
     return c.json(await bridge.request("seek", payload));
   });
+  for (const action of ["task_prepare", "task_run"]) {
+    app.post(`/api/${action}`, async (c) => {
+      const payload = z.object({
+        task: z.enum(["step_5cm", "step_35cm", "box_lift"]),
+        controller: z.enum(["teacher", "student"]),
+      }).parse(await c.req.json());
+      return c.json(await bridge.request(action, payload));
+    });
+  }
   app.post("/api/physics", async (c) => {
     const payload = z
       .object({

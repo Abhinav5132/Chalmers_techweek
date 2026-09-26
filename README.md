@@ -25,6 +25,11 @@ Clip changes, repeats, and loop boundaries preserve the robot’s physical state
 Only starting a new routine resets the robot; abrupt reference changes can affect balance.
 
 
+The **Tasks** tab demos a 5 cm or 35 cm step climb and a two-hand box lift,
+with real scene geometry, contacts and measured success criteria. Teacher mode
+is ready without trained weights; learned students require the task's local
+qualified checkpoint. See [task demo controls](web/README.md#task-demos).
+
 ## Robot commands through Hermes and MCP
 
 [Hermes Agent](https://github.com/nousresearch/hermes-agent) turns your text requests

@@ -34,6 +34,8 @@ class Studio:
         self.original_friction = self.model.geom_friction.copy()
         self.physics = None
         self.tracking = None
+        self.task_session = None
+        self.task_models = {}
         self.entries: list[dict] = []
         self.clips: dict = {}
         self.loop = False
@@ -60,6 +62,8 @@ class Studio:
         except Exception as exc:
             result['physics'] = {'teacher_available': False, 'student_available': False, 'error': str(exc)}
         result['tracking'] = tracking_catalog(self.root)
+        from task_session import catalog as task_catalog
+        result['tasks'] = task_catalog(self.root)
         for motion in result['motions']:
             error = tracking_clip_error(self.library.path(motion['id']))
             motion.update(tracking_available=error is None, tracking_error=error)
@@ -75,9 +79,15 @@ class Studio:
         return self.tracking
 
     def geometry(self, scene='g1'):
-        if scene not in ('g1', 'wbc'):
+        from task_session import PRESETS, make_model
+        if scene in PRESETS:
+            if scene not in self.task_models:
+                self.task_models[scene] = make_model(scene)
+            model = self.task_models[scene]
+        elif scene in ('g1', 'wbc'):
+            model = self._tracking().model if scene == 'wbc' else self.model
+        else:
             raise ValueError('Unknown robot scene.')
-        model = self._tracking().model if scene == 'wbc' else self.model
         meshes = []
         for i in range(model.nmesh):
             va, vn = int(model.mesh_vertadr[i]), int(model.mesh_vertnum[i])
@@ -87,7 +97,8 @@ class Studio:
         geoms = []
         for i in range(model.ngeom):
             # This G1 model puts visual meshes in group 1, collision duplicates in 0.
-            if model.geom_bodyid[i] == 0 or model.geom_group[i] != (2 if scene == 'wbc' else 1):
+            task_geom = scene in PRESETS and model.geom(i).name in ('curriculum_step', 'grasp_table', 'object_box')
+            if not task_geom and (model.geom_bodyid[i] == 0 or model.geom_group[i] != (2 if scene == 'wbc' else 1)):
                 continue
             rgba = model.geom_rgba[i].copy()
             material = int(model.geom_matid[i])
@@ -156,7 +167,14 @@ class Studio:
     def tick(self, dt: float):
         if self.state['state'] != 'running':
             return
-        if self.state['mode'] == 'wbc_tracking':
+        if self.state['mode'] == 'task_physics':
+            self.physics_budget = min(self.physics_budget + dt, .05)
+            for _ in range(min(2, int((self.physics_budget + 1e-9) / self.task_session.dt))):
+                self.physics_budget -= self.task_session.dt
+                self.state = dict(self.task_session.step())
+                if self.state['state'] != 'running':
+                    break
+        elif self.state['mode'] == 'wbc_tracking':
             self.physics_budget += dt
             for _ in range(min(5, int((self.physics_budget + 1e-9) / self.tracking.dt))):
                 self.physics_budget -= self.tracking.dt
@@ -186,8 +204,9 @@ class Studio:
 
     def status(self):
         is_tracking = self.state['mode'] == 'wbc_tracking'
-        data = self.tracking.data if is_tracking else self.data
-        return {**self.state, 'model_id': 'wbc' if is_tracking else 'g1',
+        is_task = self.state['mode'] == 'task_physics'
+        data = self.task_session.data if is_task else self.tracking.data if is_tracking else self.data
+        return {**self.state, 'model_id': self.task_session.task if is_task else 'wbc' if is_tracking else 'g1',
                 'positions': data.xpos.reshape(-1).round(6).tolist(),
                 'quaternions': data.xquat.reshape(-1).round(6).tolist()}
 
@@ -200,15 +219,34 @@ class Studio:
             return self.status()
         if action == 'run':
             return self.run(payload['entries'], payload.get('loop', False), payload.get('mode', 'kinematic_playback'))
+        if action in ('task_prepare', 'task_run'):
+            from task_session import TaskSession
+            session = TaskSession(payload['task'], payload.get('controller', 'teacher'), self.root, running=action == 'task_run')
+            self.task_session = session
+            self.state = dict(session.state)
+            self.physics_budget = 0.
+            self.last_tick = time.monotonic()
+            return self.status()
+        if action == 'task_exit':
+            self.task_session = None
+            self.physics_budget = 0.
+            self.last_tick = time.monotonic()
+            return self.reset()
         if action == 'reset':
+            if self.state['mode'] == 'task_physics':
+                return self.command('task_prepare', {'task': self.task_session.task, 'controller': self.task_session.controller})
             return self.reset()
         if action == 'pause':
             if self.state['state'] == 'running':
                 self.state['state'] = 'paused'
+                if self.state['mode'] == 'task_physics':
+                    self.task_session.state['state'] = 'paused'
             return self.status()
         if action == 'resume':
             if self.state['state'] == 'paused':
                 self.state['state'] = 'running'
+                if self.state['mode'] == 'task_physics':
+                    self.task_session.state['state'] = 'running'
                 self.last_tick = time.monotonic()
             return self.status()
         if action == 'stop':
