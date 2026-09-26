@@ -244,3 +244,19 @@ web:
 # Type-check and build the browser motion editor.
 web-build:
     npm --prefix web run build
+# Physics-based two-hand box lift; original fixed hands, no object attachment.
+grasp-teacher:
+    uv run --group training {{viewer_python}} src/grasp_learning.py view-teacher
+
+grasp-teacher-check:
+    uv run --group training python src/grasp_learning.py evaluate
+
+# Qualify teacher, collect labels, fit feedback student and test it independently.
+grasp-train:
+    uv run --group training python src/grasp_learning.py train
+
+grasp-student:
+    uv run --group training {{viewer_python}} src/grasp_learning.py view-student
+
+grasp-results:
+    uv run --group training python src/grasp_learning.py results
