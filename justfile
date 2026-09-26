@@ -279,3 +279,20 @@ step-feedback height="0.05":
 # Learn local state corrections from the teacher, then qualify without assistance.
 step-feedback-train height="0.05":
     uv run --group training python src/stair_feedback.py train --height {{height}}
+
+# Physics-based two-hand box lift; original fixed hands, no object attachment.
+grasp-teacher:
+    uv run --group training {{viewer_python}} src/grasp_learning.py view-teacher
+
+grasp-teacher-check:
+    uv run --group training python src/grasp_learning.py evaluate
+
+# Qualify teacher, collect labels, fit feedback student and test it independently.
+grasp-train:
+    uv run --group training python src/grasp_learning.py train
+
+grasp-student:
+    uv run --group training {{viewer_python}} src/grasp_learning.py view-student
+
+grasp-results:
+    uv run --group training python src/grasp_learning.py results

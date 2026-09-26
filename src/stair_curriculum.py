@@ -173,6 +173,9 @@ class Teacher:
             q[14]=.4*envelope
         return q
 
+    def extra_tasks(self, task):
+        """Optional manipulation tasks, expressed in the robot's velocity space."""
+
     def action(self):
         m,d=self.m,self.d;n=m.nv
         feet,com,stance,phase=self.targets(d.time)
@@ -212,6 +215,7 @@ class Teacher:
         task(Jp,40*(qref-d.qpos[7:])-10*d.qvel[6:],.1)
         if self.height>.05001:
             task(Jp[13:15],60*(qref[13:15]-d.qpos[20:22])-16*d.qvel[19:21],5)
+        self.extra_tasks(task)
         A=np.hstack([M[:6],-Jf[:,:6].T]);b=-d.qfrc_bias[:6]+d.qfrc_passive[:6]
         # Original actuator torque bounds, non-negative normal force and friction pyramid.
         G=[T,-T];h=[m.actuator_ctrlrange[:,1]-bias,-m.actuator_ctrlrange[:,0]+bias]

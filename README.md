@@ -1051,3 +1051,84 @@ and `contacts.csv` (foot loads) directly under
 `.robot-runtime/imitation/stair-curriculum/`. These files describe the teacher,
 not the student's training results, and are overwritten by the next teacher
 evaluation. Copy them elsewhere if you want to preserve a comparison.
+
+### Learn a physical two-hand object lift
+
+The `grabObj` branch adds a first manipulation task: stand in front of a
+pedestal, reach around a **150 g box**, squeeze it between both fixed rubber
+hands, lift it and hold it. The current 29-DoF model has no actuated fingers,
+so this is a two-hand friction grasp rather than a finger grasp.
+
+This task uses MuJoCo gravity, collisions, friction and bounded motor torques.
+The pelvis and object both have free joints. There is no weld, invisible object
+attachment, kinematic lifting or pose playback. The original robot masses,
+joint limits and actuator limits remain unchanged. **This scene enables contact
+on the existing rubber-hand mesh geoms**, which were visual-only in the source
+model; the original XML and the stair scenes are not modified.
+
+From the project directory:
+
+```bash
+uv sync --group training
+just grasp-teacher        # Watch the teacher reach, squeeze, lift and hold
+just grasp-teacher-check  # Headless teacher trial and physical contact trace
+just grasp-train          # Collect teacher data, train and evaluate on CPU
+just grasp-student        # Watch the last qualified student (after a passing run)
+open "$(just grasp-results)"  # macOS: open latest training analytics
+```
+
+Training first requires **5/5 teacher successes**. It then collects one physical
+teacher demonstration and synthetic nearby-state torque labels: positive and
+negative perturbations of the robot's 35 pose and 35 velocity coordinates,
+at approximately 0.1-second intervals. Pose perturbations are 0.002 m/rad;
+velocity perturbations are 0.02 m/s or rad/s. These offline queries do not count
+as additional successful grasps. A supervised local linear student learns the
+teacher's nominal torques and corrective feedback. There is no reward training,
+reinforcement learning or DAgger in this first grasp pipeline.
+
+The teacher uses the standing balance QP with hand position/orientation tasks.
+The student's runtime uses its saved coefficients, robot state and elapsed
+time; it does not call the teacher. Selection tests try velocity-feedback scales
+1, 0.75 and 0.5, stopping at the first candidate that passes all three selection
+seeds. That candidate gets five separate final tests. A failed final test stops
+promotion; the final seeds are not used to select another candidate.
+
+Success requires reaching the end of the 12-second trial without falling or
+dropping the box, plus a continuous final hold of at least **2 seconds** with:
+
+- object centre more than 8 cm above its initial height;
+- contact force above 0.1 N from each hand;
+- less than 0.05 N of contact with the pedestal or other bodies;
+- pelvis uprightness greater than 0.95.
+
+Runs are saved under `.robot-runtime/imitation/grasp/<timestamp>/`:
+
+| File | Contents |
+| --- | --- |
+| `index.html`, `results.png` | Success fraction, final lift height and hold duration by evaluation group. |
+| `results.json`, `evaluations.csv` | Per-trial outcomes, seeds, failures, lift, hold, uprightness and torque limits. |
+| `*-trace.csv` | Time series of object position, both hand loads, pedestal/other contact loads and balance. |
+| `teacher-labels.npz` | Synthetic state perturbations and teacher torque labels. |
+| `demonstration-policy.npz` | Demonstration anchors: time, robot pose, velocity, nominal torques and fitted gains. |
+| `policy-damping-*.npz` | Candidate students; a file existing does not mean the candidate passed. |
+
+`grasp-results` prints the latest report, which may describe a failed run.
+`.robot-runtime/imitation/grasp/qualified.json` identifies the accepted student's
+checkpoint and report. Failed retraining leaves the previous accepted student
+available. The student command refuses to run without a qualified policy.
+For another system, open the path printed by `just grasp-results` in a browser.
+
+**Scope:** this is a known box, known pedestal and fixed approach/timing, with
+initial object X/Y variations of only ±1 mm and joint noise of 0.0005 rad. The
+student uses robot state, not a camera or object-pose feedback. Passing this
+task does not establish general object detection, one-handed grasping, handling
+unseen shapes, walking while carrying, or real-hardware readiness. Generated
+training data, policies and analytics remain local and are not committed.
+
+Initial local validation (2026-09-26): the teacher passed 5/5 qualification
+trials. Training produced **16,800 synthetic teacher-labelled states** around
+one successful demonstration. The feedback student at scale 1.0 passed 3/3
+selection trials and 5/5 separate final trials, lifting the box approximately
+8.6–8.8 cm and holding it for 3 seconds. An additional automated trial on seed
+99010 passed with teacher action calls disabled. These results apply only to
+the restricted task above. The full local test suite passed 31 tests.
